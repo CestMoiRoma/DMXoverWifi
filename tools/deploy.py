@@ -485,22 +485,33 @@ def main():
         print("Applying .env defaults:")
         apply_env_defaults(parse_env(env_path), target, force=args.force)
 
-    if unlocked_us and not args.no_reboot:
-        print("Rebooting board back to normal mode...")
-        try:
-            send_line(port, "Reboot")
-        except SystemExit:
-            # Serial might briefly disappear during the earlier reset; give
-            # it another moment and retry once.
-            time.sleep(1.5)
+    if not args.no_reboot:
+        # Always reboot at the end so the board comes back running the
+        # freshly-deployed code in normal (STA) mode - even when the drive
+        # was already writable at the start (typically because we're still
+        # in a config-mode session from a previous unlock).
+        if not port:
+            port = args.port  # may still be None; ok, we'll skip cleanly
+        if port:
+            print("Rebooting board back to normal mode...")
             try:
                 send_line(port, "Reboot")
             except SystemExit:
-                print(
-                    "Could not send Reboot - the board is still in config mode. "
-                    "Reset it manually to return to normal.",
-                    file=sys.stderr,
-                )
+                time.sleep(1.5)
+                try:
+                    send_line(port, "Reboot")
+                except SystemExit:
+                    print(
+                        "Could not send Reboot - reset the board manually to "
+                        "return to normal mode.",
+                        file=sys.stderr,
+                    )
+        else:
+            print(
+                "No --port given and drive was already writable; skipping "
+                "auto-reboot. Send 'Reboot' via serial or reset the board "
+                "manually to leave config mode."
+            )
 
     print("Deploy complete.")
 
