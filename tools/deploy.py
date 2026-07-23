@@ -144,6 +144,30 @@ def send_line(port, line):
         ser.close()
 
 
+def repl_arm_config_reset(port):
+    """Bootstrap fallback: interrupt code.py and arm config mode from the
+    raw REPL. Used when the firmware on the board is too old to know the
+    Set-System reboot-config command."""
+    ser = _open_serial(port)
+    try:
+        ser.write(bytes([3]))              # Ctrl-C to break running code.py
+        time.sleep(0.7)
+        try:
+            ser.reset_input_buffer()
+        except Exception:
+            pass
+        ser.write(b"\r\n")
+        time.sleep(0.3)
+        ser.write(b"import microcontroller\r\n")
+        time.sleep(0.4)
+        ser.write(b"microcontroller.nvm[0] = 0x42\r\n")
+        time.sleep(0.4)
+        ser.write(b"microcontroller.reset()\r\n")
+        time.sleep(0.8)
+    finally:
+        ser.close()
+
+
 def parse_env(path):
     """Parse a .env-style file into a flat {KEY: value} dict."""
     env = {}
@@ -412,12 +436,19 @@ def main():
         print("  sending Set-System reboot-config...")
         send_line(port, "Set-System reboot-config")
         print("  waiting for drive to come back writable...")
-        if not wait_for_writable(target, timeout=25):
-            print(
-                "Timed out waiting for %s to become writable." % target,
-                file=sys.stderr,
-            )
-            sys.exit(1)
+        if not wait_for_writable(target, timeout=15):
+            # Fallback: older firmware doesn't know reboot-config. Drop into
+            # the raw REPL and arm the marker + reset directly.
+            print("  no response - falling back to raw REPL bootstrap...")
+            eject_host(target)
+            time.sleep(0.5)
+            repl_arm_config_reset(port)
+            if not wait_for_writable(target, timeout=20):
+                print(
+                    "Timed out waiting for %s to become writable." % target,
+                    file=sys.stderr,
+                )
+                sys.exit(1)
         unlocked_us = True
         print("  drive is writable.")
 
