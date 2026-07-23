@@ -79,10 +79,8 @@ class MqttManager:
             for channel in device.channels:
                 uid = self._uid(device.id, channel.offset)
                 command_topic = "%s/%s/set" % (self._base_topic(), uid)
-                config_topic = None
-                payload = None
+                state_topic = "%s/%s/state" % (self._base_topic(), uid)
                 if channel.type == "slider":
-                    state_topic = "%s/%s/state" % (self._base_topic(), uid)
                     payload = {
                         "name": channel.name,
                         "unique_id": uid,
@@ -94,7 +92,22 @@ class MqttManager:
                         "device": device_block,
                     }
                     config_topic = "%s/number/%s/config" % (self._discovery_prefix(), uid)
+                elif channel.type == "button-switch":
+                    payload = {
+                        "name": channel.name,
+                        "unique_id": uid,
+                        "command_topic": command_topic,
+                        "state_topic": state_topic,
+                        "payload_on": "255",
+                        "payload_off": "0",
+                        "state_on": "255",
+                        "state_off": "0",
+                        "device": device_block,
+                    }
+                    config_topic = "%s/switch/%s/config" % (self._discovery_prefix(), uid)
                 else:
+                    # button + button-momentary map to HA's button entity
+                    # (single-press event, no state).
                     payload = {
                         "name": channel.name,
                         "unique_id": uid,
@@ -130,8 +143,16 @@ class MqttManager:
         if channel is None:
             return
 
-        if channel.type == "button":
+        if channel.type in ("button", "button-momentary"):
             value = 255
+        elif channel.type == "button-switch":
+            payload = str(message).strip().upper()
+            if payload in ("ON", "TRUE", "1", "255"):
+                value = 255
+            elif payload in ("OFF", "FALSE", "0"):
+                value = 0
+            else:
+                return
         else:
             try:
                 value = int(float(message))
@@ -139,7 +160,7 @@ class MqttManager:
                 return
 
         self.device_manager.set_value(device_id, offset, value)
-        if channel.type == "slider":
+        if channel.type in ("slider", "button-switch"):
             self.publish_state(device_id, offset, value)
 
     def publish_state(self, device_id, offset, value):

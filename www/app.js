@@ -53,31 +53,52 @@ async function renderHome() {
     device.channels.forEach((channel) => {
       const row = el("div", { class: "channel-control" });
       row.appendChild(el("label", {}, [channel.name]));
-      if (channel.type === "slider") {
-        const input = el("input", {
-          type: "range",
-          min: "0",
-          max: "255",
-          value: "0",
+      const send = (value) =>
+        api("/api/devices/" + device.id + "/channel/" + channel.offset, "POST", {
+          value: value,
         });
+
+      if (channel.type === "slider") {
+        const input = el("input", { type: "range", min: "0", max: "255", value: "0" });
         const output = el("span", {}, ["0"]);
         input.addEventListener("input", () => {
           output.textContent = input.value;
         });
-        input.addEventListener("change", () => {
-          api("/api/devices/" + device.id + "/channel/" + channel.offset, "POST", {
-            value: parseInt(input.value, 10),
-          });
-        });
+        input.addEventListener("change", () => send(parseInt(input.value, 10)));
         row.appendChild(input);
         row.appendChild(output);
+      } else if (channel.type === "button-momentary") {
+        const button = el("button", { class: "channel-btn momentary" }, ["Hold"]);
+        const press = (e) => {
+          if (e) e.preventDefault();
+          send(255);
+        };
+        const release = (e) => {
+          if (e) e.preventDefault();
+          send(0);
+        };
+        button.addEventListener("mousedown", press);
+        button.addEventListener("mouseup", release);
+        button.addEventListener("mouseleave", release);
+        button.addEventListener("touchstart", press);
+        button.addEventListener("touchend", release);
+        button.addEventListener("touchcancel", release);
+        row.appendChild(button);
+      } else if (channel.type === "button-switch") {
+        const button = el("button", { class: "channel-btn switch" }, ["Off"]);
+        let on = false;
+        const apply = () => {
+          on = !on;
+          button.textContent = on ? "On" : "Off";
+          button.classList.toggle("on", on);
+          send(on ? 255 : 0);
+        };
+        button.addEventListener("click", apply);
+        row.appendChild(button);
       } else {
-        const button = el("button", {}, ["Trigger"]);
-        button.addEventListener("click", () => {
-          api("/api/devices/" + device.id + "/channel/" + channel.offset, "POST", {
-            value: 255,
-          });
-        });
+        // legacy "button" = fire-and-forget trigger
+        const button = el("button", { class: "channel-btn" }, ["Trigger"]);
+        button.addEventListener("click", () => send(255));
         row.appendChild(button);
       }
       card.appendChild(row);
@@ -205,7 +226,9 @@ function addChannelRow(offset) {
   row.appendChild(el("input", { type: "text", placeholder: "Name", class: "ch-name" }));
   const select = el("select", { class: "ch-type" }, [
     el("option", { value: "slider" }, ["Slider"]),
-    el("option", { value: "button" }, ["Button"]),
+    el("option", { value: "button" }, ["Button (trigger)"]),
+    el("option", { value: "button-momentary" }, ["Button (momentary)"]),
+    el("option", { value: "button-switch" }, ["Button (switch)"]),
   ]);
   row.appendChild(select);
   const removeBtn = el("button", { type: "button", class: "secondary" }, ["Remove"]);

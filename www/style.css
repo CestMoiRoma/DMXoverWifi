@@ -97,6 +97,10 @@ main { padding: 1.25rem; max-width: 640px; margin: 0 auto; }
 }
 .channel-control label { color: var(--muted); font-size: 0.9rem; }
 
+.channel-btn { min-width: 5rem; }
+.channel-btn.momentary { touch-action: none; user-select: none; -webkit-user-select: none; }
+.channel-btn.switch.on { background: #16a34a; border-color: #16a34a; }
+
 .list-item {
   display: flex;
   justify-content: space-between;
