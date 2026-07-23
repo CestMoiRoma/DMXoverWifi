@@ -117,14 +117,40 @@ class SerialConsole:
 
     @staticmethod
     def _tokenize(text):
+        # Hand-rolled instead of shlex (not available in CircuitPython).
+        # Supports key=value and key="value with spaces" / key='...'.
         bare = []
         kwargs = {}
-        for token in text.split():
-            if "=" in token:
-                key, _, value = token.partition("=")
-                kwargs[key.strip().lower()] = value.strip()
+        i = 0
+        n = len(text)
+        while i < n:
+            while i < n and text[i] == " ":
+                i += 1
+            if i >= n:
+                break
+            start = i
+            while i < n and text[i] not in "= ":
+                i += 1
+            key = text[start:i]
+            if i < n and text[i] == "=":
+                i += 1
+                if i < n and text[i] in "\"'":
+                    quote = text[i]
+                    i += 1
+                    value_start = i
+                    while i < n and text[i] != quote:
+                        i += 1
+                    value = text[value_start:i]
+                    if i < n:
+                        i += 1
+                else:
+                    value_start = i
+                    while i < n and text[i] != " ":
+                        i += 1
+                    value = text[value_start:i]
+                kwargs[key.strip().lower()] = value
             else:
-                bare.append(token)
+                bare.append(key)
         return bare, kwargs
 
     def _sub_and_args(self, rest):
