@@ -1,7 +1,7 @@
-# DMX over WiFi — Wiki
+# DMX over WiFi: wiki
 
-Reference for everything you drive from a keyboard: the serial console, the deploy
-workflow, the HTTP API and the MQTT bridge.
+Reference for everything you drive from a keyboard: the serial console, the
+deploy workflow, the HTTP API, the MQTT bridge and the test suite.
 
 See [README.md](README.md) for hardware, wiring and first-time setup.
 
@@ -11,25 +11,26 @@ See [README.md](README.md) for hardware, wiring and first-time setup.
   - [Command reference](#command-reference)
 - [Deploying](#deploying)
 - [Filesystem write access](#filesystem-write-access)
+- [Channel types](#channel-types)
 - [HTTP API](#http-api)
 - [MQTT and Home Assistant](#mqtt-and-home-assistant)
 - [Timing and latency](#timing-and-latency)
+- [Test suite](#test-suite)
 - [Configuration files](#configuration-files)
 - [Troubleshooting](#troubleshooting)
 
----
-
 ## Serial console
 
-The board exposes a text console on its USB CDC serial port. It is polled from the
-main loop, so it stays available while DMX is running — you can reconfigure a live
-rig without a browser.
+The board exposes a text console on its USB serial port. It is polled from the
+main loop, so it stays available while DMX is running and you can reconfigure a
+live rig without a browser.
 
 ### Opening a session
 
-`tools/serial_console.py` is a small cross-platform terminal built for this board.
-It exists because it forces **DTR and RTS on**: GUI terminals (VS Code Serial
-Monitor, PuTTY) have been unreliable with this device's native USB CDC port.
+`tools/serial_console.py` is a small cross-platform terminal built for this
+board. It exists because it forces DTR and RTS on, which GUI terminals such as
+the VS Code Serial Monitor and PuTTY have been unreliable about with this
+device's native USB CDC port.
 
 It needs [pyserial](https://pypi.org/project/pyserial/):
 
@@ -38,19 +39,19 @@ pip install pyserial
 python tools/serial_console.py
 ```
 
-Run with no arguments and it **lists the serial ports it can see and asks which
-one to use**:
+Run it with no arguments and it lists the serial ports it can see, then asks
+which one to use:
 
 ```
 Detected serial ports:
-  1. COM4 - Lien série sur Bluetooth standard (COM4)
-  2. COM5 - Lien série sur Bluetooth standard (COM5)
-  3. COM9 - Périphérique série USB (COM9)
+  1. COM4 - Standard Serial over Bluetooth link (COM4)
+  2. COM5 - Standard Serial over Bluetooth link (COM5)
+  3. COM9 - USB Serial Device (COM9)
 Pick a number, or type a device path:
 ```
 
-Pick the *USB serial device* — Bluetooth COM ports show up in the same list and
-will just sit there silently. You can also pass the port (and baud rate) directly:
+Pick the USB serial device. Bluetooth ports show up in the same list and will
+just sit there silently. You can also pass the port, and a baud rate, directly:
 
 ```bash
 python tools/serial_console.py COM9                     # Windows
@@ -59,9 +60,8 @@ python tools/serial_console.py /dev/tty.usbmodem14201   # macOS
 python tools/serial_console.py COM9 115200              # explicit baud
 ```
 
-Both arguments are positional and optional: `serial_console.py [PORT] [BAUD]`.
-Baud defaults to `115200` and is ignored by USB CDC anyway, but the API wants a
-value.
+Both arguments are positional and optional. Baud defaults to `115200` and is
+ignored by USB CDC anyway, but the API wants a value.
 
 #### Using it
 
@@ -79,12 +79,12 @@ OK memory: 1946528 bytes free
 Disconnected.
 ```
 
-The terminal waits ~500 ms after sending, then prints whatever came back. `exit`
-closes the terminal only — the board keeps running.
+The terminal waits about half a second after sending, then prints whatever came
+back. `exit` closes the terminal only, and the board keeps running.
 
-> The board also exposes a **CIRCUITPY** mass-storage volume. That is a different
-> interface from the serial port — the drive letter (`E:`) and the COM port
-> (`COM9`) are unrelated, and ejecting the drive does not close the console.
+> The board also exposes a `CIRCUITPY` mass-storage volume. That is a different
+> interface from the serial port. The drive letter and the COM port are
+> unrelated, and ejecting the drive does not close the console.
 
 ### Command syntax
 
@@ -92,13 +92,13 @@ closes the terminal only — the board keeps running.
 <Command> [subcommand] [key=value ...]
 ```
 
-- **Commands and subcommands are case-insensitive** — `get-status`, `Get-Status`
+- Commands and subcommands are case insensitive, so `get-status`, `Get-Status`
   and `GET-STATUS` are the same.
-- Arguments are `key=value`. **Values with spaces must be quoted**, single or
-  double: `ssid="Guest Network"`.
-- Values are otherwise taken literally, so no escaping is needed for `!`, `$`, etc.
+- Arguments are `key=value`. Values containing spaces must be quoted, with
+  single or double quotes: `ssid="Guest Network"`.
+- Values are otherwise taken literally, so nothing needs escaping.
 - Passwords accept three spellings: `passwd=`, `psswd=` or `password=`.
-- Every output line is prefixed with `OK `; failures come back as a single
+- Every output line is prefixed with `OK `. Failures come back as a single
   `ERR <reason>` line.
 
 ### Command reference
@@ -109,22 +109,26 @@ Type `Help` on the board for the built-in summary.
 
 | Command | What it does |
 |---|---|
-| `Add-Wifi ssid=<ssid> passwd=<password> [priority=<n>]` | Save a network **and immediately try to connect**. Higher priority wins at boot. Re-adding an SSID replaces its entry. |
-| `Set-System wifi-add ssid=<ssid> passwd=<password> [priority=<n>]` | Same thing, under `Set-System`. |
+| `Add-Wifi ssid=<ssid> passwd=<password> [priority=<n>]` | Save a network and immediately try to join it. Higher priority wins at boot. Re-adding an SSID replaces its entry. |
+| `Set-System wifi-add ssid=<ssid> passwd=<password> [priority=<n>]` | The same thing, under `Set-System`. |
 | `Set-System wifi-del ssid=<ssid>` | Remove a saved network. |
-| `Set-System wifi-list` | List visible networks (with RSSI) and saved ones (with priority). |
+| `Set-System wifi-list` | List visible networks with their signal strength, and saved ones with their priority. |
 
 ```
-> Add-Wifi ssid="Venue WiFi" passwd="stage-left-2024" priority=10
+> Add-Wifi ssid="Venue WiFi" passwd="stage-left-2026" priority=10
 OK wifi 'Venue WiFi' saved and connected
 ```
+
+The reply says `saved` on its own when the network could not be joined, which
+usually means it is out of range or the password is wrong. The entry is still
+stored either way.
 
 #### MQTT
 
 | Command | What it does |
 |---|---|
 | `Add-mqtt broker=<host> user=<user> passwd=<password> [port=<n>]` | Enable MQTT, save the broker and connect. Port defaults to `1883`. |
-| `Set-System mqtt-enable broker=<host> user=<u> passwd=<p> [port=<n>]` | Same thing, under `Set-System`. |
+| `Set-System mqtt-enable broker=<host> user=<u> passwd=<p> [port=<n>]` | The same thing, under `Set-System`. |
 | `Set-System mqtt-disable` | Disable MQTT and disconnect. |
 
 ```
@@ -136,14 +140,15 @@ OK mqtt enabled, broker=192.168.1.20
 
 | Command | What it does |
 |---|---|
-| `Set-System tx-pin=<pin>` | Set the pin wired to the MAX485 `DI`. **Reboot to apply.** |
-| `Set-System dir-pin enable=<true\|false> [pin=<pin>]` | Enable/disable the `DE`+`RE` direction pin and name it. **Reboot to apply.** |
+| `Set-System tx-pin=<pin>` | Set the pin wired to the MAX485 `DI`. Reboot to apply. |
+| `Set-System dir-pin enable=<true\|false> [pin=<pin>]` | Enable or disable the `DE` and `RE` direction pin, and name it. Reboot to apply. |
 
-The pin is a **CircuitPython `board` attribute name** (`D4`, `IO7`, …), not a
-number. `enable=` accepts `true/1/yes/on` as true, anything else as false.
+The pin is a CircuitPython `board` attribute name such as `D4` or `IO7`, not a
+number. `enable=` treats `true`, `1`, `yes` and `on` as true, and anything else
+as false.
 
-Leave the direction pin **disabled** if `DE`+`RE` are tied to VCC — that is the
-default and matches the reference wiring.
+Leave the direction pin disabled if `DE` and `RE` are tied to VCC. That is the
+default, and it matches the reference wiring.
 
 ```
 > Set-System tx-pin=D4
@@ -156,23 +161,23 @@ OK dir pin enabled (pin=D3) (reboot to apply)
 
 | Command | What it does |
 |---|---|
-| `Set-System hotspot name=<name> passwd=<password>` | Rename the config AP / change its password. **Reboot to apply.** |
+| `Set-System hotspot name=<name> passwd=<password>` | Rename the config access point, or change its password. Reboot to apply. |
 
-Defaults: SSID `ESP-DMX`, password `DMX4ALL1`, address `1.1.1.1`. The AP starts
-automatically whenever no saved network can be joined, so the UI stays reachable
-even with no infrastructure around.
+Defaults are SSID `ESP-DMX`, password `DMX4ALL1`, address `1.1.1.1`. The hotspot
+starts automatically whenever no saved network can be joined, so the UI stays
+reachable with no infrastructure around.
 
-#### Devices and channels
+#### Fixtures and channels
 
 | Command | What it does |
 |---|---|
-| `Set-device add name=<name>` | Create a fixture. The **start channel is assigned automatically**, right after the last channel currently in use. |
-| `Set-device add-channel device=<name> name=<ch> channel=<offset> mode=<slider\|bool>` | Add a channel to a fixture. `channel=` is the **offset within the fixture**, not the DMX address. |
+| `Set-device add name=<name>` | Create a fixture. The start channel is assigned automatically, right after the last address currently in use. |
+| `Set-device add-channel device=<name> name=<ch> channel=<offset> mode=<mode>` | Add a channel. `channel=` is the offset within the fixture, not the DMX address. |
 | `Set-device del-channel name=<ch> [device=<name>]` | Remove a channel. If the name exists on several fixtures you must pass `device=`. |
 | `Set-device del device=<name>` | Delete a fixture. |
 
-`mode=` accepts `slider` (0-255 fader) or `bool` / `button` / `btn` / `boolean`
-(fire-and-forget, sends 255). Anything else falls back to `slider`.
+`mode=` takes any of the aliases in [Channel types](#channel-types). Anything
+unrecognised falls back to `slider`.
 
 The DMX address actually driven is `start_channel + offset - 1`.
 
@@ -181,164 +186,245 @@ The DMX address actually driven is `start_channel + offset - 1`.
 OK device 'PAR LED' added (start channel 1)
 > Set-device add-channel device="PAR LED" name=Dimmer channel=1 mode=slider
 OK channel 'Dimmer' added to 'PAR LED' (offset 1, slider)
-> Set-device add-channel device="PAR LED" name=Red channel=2 mode=slider
-OK channel 'Red' added to 'PAR LED' (offset 2, slider)
+> Set-device add-channel device="PAR LED" name=Lamp channel=2 mode=toggle
+OK channel 'Lamp' added to 'PAR LED' (offset 2, button-switch)
 ```
 
 #### Status
 
 | Command | What it reports |
 |---|---|
-| `get-status` or `get-status all` | WiFi, MQTT, system pins, device/channel counts, free memory |
-| `get-status wifi` | Mode (`sta`/`ap`), SSID, IP |
+| `get-status` or `get-status all` | WiFi, MQTT, system pins, fixture and channel counts, free memory |
+| `get-status wifi` | Mode (`sta` or `ap`), SSID, address |
 | `get-status mqtt` | Enabled, connected, broker |
-| `get-status devices` | One line per fixture: start channel and channel count |
-| `get-status device name=<name>` | Every channel of one fixture with its **current DMX value** |
+| `get-status devices` | One line per fixture, with its start channel and channel count |
+| `get-status device name=<name>` | Every channel of one fixture, with its live DMX value |
 | `get-status channel channel=<ch> [device=<name>]` | One channel's offset, mode and live value |
-| `get-status mesh` | Stored mesh role and SSID (WIP) |
+| `get-status mesh` | Stored mesh role and SSID (work in progress) |
 
 ```
 > get-status device name="PAR LED"
 OK   1: Dimmer (slider) = 255
-OK   2: Red (slider) = 200
+OK   2: Lamp (button-switch) = 0
 ```
 
-#### Parent/Child mesh — WIP
+#### Filesystem and reboots
 
 | Command | What it does |
 |---|---|
-| `Set-System mesh role=<none\|parent\|child> [ssid=<>] [passwd=<>]` | **Stores the settings only.** No parent/child radio logic is implemented yet. |
+| `Set-System reboot-config` | Arm config mode and reset. The board comes back with the filesystem writable from the PC. This is what `deploy.py` uses. |
+| `Set-System unlock-write` | Hand write access to the host without rebooting. Requires the host to have ejected the drive first. |
+| `Reboot` | Restart the board. |
 
-#### Maintenance
+See [Filesystem write access](#filesystem-write-access).
+
+#### Parent and child mesh, work in progress
+
+| Command | What it does |
+|---|---|
+| `Set-System mesh role=<none\|parent\|child> [ssid=<>] [passwd=<>]` | Stores the settings only. No parent or child radio logic exists yet. |
+
+#### Other
 
 | Command | What it does |
 |---|---|
 | `Help` | Print the built-in command summary |
-| `Reboot` | Restart the board |
-| `Set-System unlock-write` | Hand filesystem write access back to the PC until the next reboot — see below |
-
----
 
 ## Deploying
 
-`tools/deploy.py` copies the firmware from this repo onto the board's `CIRCUITPY`
-volume. Python only, no PowerShell, same command on every OS.
+`tools/deploy.py` copies the firmware from this repo onto the board's
+`CIRCUITPY` volume. Python only, and the same command on every OS.
 
 ```bash
+python tools/deploy.py                            # asks where the drive is
 python tools/deploy.py E:\                        # Windows
 python tools/deploy.py /Volumes/CIRCUITPY         # macOS
 python tools/deploy.py /media/$USER/CIRCUITPY     # Linux
 ```
 
-Run it **with no argument** and it asks where the volume is mounted, with a hint
-for your platform:
-
-```
-Path to the CIRCUITPY drive (e.g. E:\ or L:\):
-```
-
-**It syncs** `boot.py`, `code.py`, `src/`, `www/` **and `lib/`** — so the vendored
+It syncs `boot.py`, `code.py`, `src/`, `www/` and `lib/`, so the vendored
 CircuitPython libraries land on the board too and there is nothing to copy by
-hand.
+hand. It also drops a copy of `WIKI.md` into `www/wiki.md`, which is what the
+Info page's offline wiki link serves.
 
-**It never touches `data/`**, your saved config, so deploying does not wipe your
+It never touches `data/`, your saved config, so deploying does not wipe your
 WiFi credentials or fixtures.
 
 Directories are wiped on the target before being copied, so files you deleted in
-the repo really disappear instead of lingering. The script first writes a probe
-file and **aborts with a clear message if the volume is read-only**.
+the repo really disappear instead of lingering.
 
-Reboot the board when it finishes — CircuitPython does not reload from a host-side
-copy on its own here. `Reboot` over serial does it without touching the hardware.
+### Unlocking happens automatically
 
----
+After the firmware has run once, the board owns the filesystem and `CIRCUITPY`
+is read-only from the PC. `deploy.py` notices and handles it:
+
+1. Asks which serial port the board is on, unless you passed `--port`.
+2. Ejects the drive from the host.
+3. Sends `Set-System reboot-config`, which resets the board into config mode.
+4. Waits for the drive to come back writable, then copies.
+5. Sends `Reboot`, so the board returns to normal mode running the new code.
+
+If the board is running firmware old enough not to know `reboot-config`, the
+script falls back to arming the marker through the raw REPL.
+
+Pass `--no-reboot` to leave the board in config mode after the copy, which is
+handy when you are about to deploy again.
+
+### Options
+
+| Flag | Effect |
+|---|---|
+| `--port PORT` | Serial port, only needed when the drive is locked |
+| `--no-reboot` | Skip the final reboot and stay in config mode |
+| `--reset-config` | Overwrite `data/*.json` from `.env` instead of only filling in what is missing |
+
+### Preloading settings from .env
+
+Copy `.env.example` to `.env` and fill in what you want a freshly flashed board
+to start with. `deploy.py` reads it and seeds `data/*.json` on the target.
+
+| Group | Keys |
+|---|---|
+| WiFi | `WIFI_1_SSID`, `WIFI_1_PASSWORD`, `WIFI_1_PRIORITY`, then `WIFI_2_*` and so on |
+| MQTT | `MQTT_ENABLED`, `MQTT_HOST`, `MQTT_PORT`, `MQTT_USERNAME`, `MQTT_PASSWORD`, `MQTT_BASE_TOPIC`, `MQTT_DISCOVERY_PREFIX` |
+| DMX and hotspot | `DMX_TX_PIN`, `DMX_DIR_PIN_ENABLED`, `DMX_DIR_PIN`, `HOSTNAME`, `AP_SSID`, `AP_PASSWORD`, `AP_IP` |
+| Static IP | `STA_IP_MODE`, `STA_STATIC_IP`, `STA_STATIC_NETMASK`, `STA_STATIC_GATEWAY`, `STA_STATIC_DNS` |
+| Mesh | `MESH_ROLE`, `MESH_SSID`, `MESH_PASSWORD` |
+| Fixtures | `DEVICE_1_NAME`, `DEVICE_1_START_CHANNEL`, `DEVICE_1_CHANNEL_1_OFFSET`, `DEVICE_1_CHANNEL_1_NAME`, `DEVICE_1_CHANNEL_1_TYPE`, and so on |
+
+Default behaviour is deliberately cautious:
+
+- **WiFi entries are merged.** New SSIDs are appended, and ones already on the
+  board are left alone.
+- **Everything else is only written if the file is missing**, so redeploying
+  does not undo changes you made through the UI.
+- `--reset-config` overrides both and overwrites from `.env`.
+
+`.env` is gitignored, because it holds passwords in clear text.
 
 ## Filesystem write access
 
-CircuitPython lets exactly one side write to the filesystem — the microcontroller
+CircuitPython lets exactly one side write to the filesystem, the microcontroller
 or the USB host, never both. After a normal boot `boot.py` calls
-`storage.remount("/", readonly=False)`, which gives write access **to the board**
-so it can persist your WiFi, device and MQTT config as JSON. The flip side is that
-`CIRCUITPY` is read-only from the PC, and `deploy.py` will refuse to run.
+`storage.remount("/", readonly=False)`, which gives write access to the board so
+it can persist your WiFi, fixture and MQTT config as JSON. The consequence is
+that `CIRCUITPY` is read-only from the PC.
 
-### Unlocking it for a deploy
+The board decides which mode to boot into from a marker byte in
+`microcontroller.nvm`:
 
-The serial console is the way to hand write access back:
+| | Normal boot | Config mode |
+|---|---|---|
+| How you get there | Power up or reset | `Set-System reboot-config`, or `deploy.py` doing it for you |
+| `CIRCUITPY` from the PC | Read-only | Writable |
+| Board saves its own config | Yes | No |
+| WiFi | Joins a saved network, hotspot as fallback | Starts the hotspot immediately |
+| Lasts | Until the next reset | One boot, the marker is consumed |
 
-1. **Eject / safely remove** the `CIRCUITPY` volume. Keep the USB cable plugged —
-   the console stays up. This step is not optional:
-
-   ```
-   > Set-System unlock-write
-   ERR Cannot remount '/' when visible via USB.
-   ```
-
-2. Now unlock:
-
-   ```
-   > Set-System unlock-write
-   OK filesystem is now PC-writable; CircuitPython can no longer save config until the next reboot
-   ```
-
-3. **Let the OS pick the volume back up.** Linux and macOS usually remount it on
-   their own. On Windows the media stays "not present" after an eject, so trigger
-   a rescan: *Device Manager → Action → Scan for hardware changes*, or `rescan` in
-   an elevated `diskpart`.
-
-4. `python tools/deploy.py`
-
-5. `Reboot` over serial. The board comes back in its normal mode, owns the
-   filesystem again, and runs the new code.
+Every step is wrapped in a fallback, so a failure in mode detection cannot brick
+the board. A board whose partition table has no NVM region simply always boots
+normally.
 
 > [!WARNING]
-> While unlocked, the board **cannot save its own config**. Anything you change
-> through the web UI or the console in that window is lost on the next boot. Keep
-> the unlock window short — unlock, deploy, reboot.
+> In config mode the board **cannot save its own config**. Anything you change
+> through the web UI or the console in that window is lost on the next boot.
+> Deploy, then reboot.
+
+### Doing it by hand
+
+You should not need to, since `deploy.py` handles it, but the two commands are
+there:
+
+```
+> Set-System reboot-config
+OK entering config mode via reset
+```
+
+The board resets and comes back with the drive writable.
+
+```
+> Set-System unlock-write
+OK filesystem is now PC-writable; CircuitPython can no longer save config until the next reboot
+```
+
+This one remounts live, without a reset, and it fails if the host still has the
+volume mounted:
+
+```
+> Set-System unlock-write
+ERR Cannot remount '/' when visible via USB.
+```
+
+Eject the drive first, then send it again. On Windows the volume then stays
+absent until something rescans, so use *Device Manager*, *Action*, *Scan for
+hardware changes*, or `rescan` in an elevated `diskpart`. This is exactly the
+awkwardness `reboot-config` exists to avoid.
 
 ### On a fresh CircuitPython install
 
 Before this firmware has ever run there is no `boot.py` to claim the filesystem,
-so `CIRCUITPY` is writable straight away and you can deploy without unlocking
-anything.
+so `CIRCUITPY` is writable straight away and the first deploy needs none of the
+above.
 
----
+## Channel types
+
+| Type | Home page control | Sends | Home Assistant entity | Serial aliases |
+|---|---|---|---|---|
+| `slider` | A 0 to 255 fader | The fader value on release | `number`, min 0, max 255 | `slider` |
+| `button` | A **Trigger** button | 255 on each press | `button` | `button`, `btn`, `trigger`, `bool`, `boolean` |
+| `button-momentary` | A **Hold** button | 255 on press, 0 on release | `button` | `momentary`, `hold`, `btn-momentary`, `button-momentary` |
+| `button-switch` | An **On** and **Off** toggle | 255 or 0, latching | `switch` | `switch`, `toggle`, `btn-switch`, `button-switch` |
+
+`button-momentary` also responds to touch, so it works from a phone at the
+lighting position.
+
+Only `slider` and `button-switch` publish state back to MQTT. The other two are
+stateless by design, since a trigger has nothing to report between presses.
 
 ## HTTP API
 
-Served on port 80 alongside the UI. JSON in, JSON out. **No authentication** —
-keep the board on a network you trust.
+Served on port 80 alongside the UI. JSON in, JSON out. There is no
+authentication, so keep the board on a network you trust.
 
-### Devices
+### Pages
 
-| Method | Route | Body / result |
+| Method | Route | |
 |---|---|---|
-| `GET` | `/api/devices` | List all fixtures with their channels |
-| `POST` | `/api/devices` | `{"name":…, "start_channel":…, "channels":[{"offset":…,"name":…,"type":"slider"\|"button"}]}` → the created fixture |
-| `PUT` | `/api/devices/<device_id>` | Any of `name`, `start_channel`, `channels` → the updated fixture, or `404` |
-| `DELETE` | `/api/devices/<device_id>` | `{"ok": true\|false}` |
-| `POST` | `/api/devices/<device_id>/channel/<offset>` | `{"value": 0-255}` → `{"ok": true}`, or `404` |
+| `GET` | `/` | The single-page web UI |
+| `GET` | `/wiki.md` | This document, as served from the board |
+
+### Fixtures
+
+| Method | Route | Body and result |
+|---|---|---|
+| `GET` | `/api/devices` | Every fixture with its channels |
+| `POST` | `/api/devices` | `{"name":…, "start_channel":…, "channels":[{"offset":…,"name":…,"type":…}]}`, returns the created fixture |
+| `PUT` | `/api/devices/<device_id>` | Any of `name`, `start_channel`, `channels`, returns the updated fixture or `404` |
+| `DELETE` | `/api/devices/<device_id>` | `{"ok": true}` or `{"ok": false}` |
+| `POST` | `/api/devices/<device_id>/channel/<offset>` | `{"value": 0-255}`, returns `{"ok": true}` or `404` |
 
 Setting a channel writes the DMX buffer straight away and mirrors the value to
-MQTT. Values are clamped to 0-255.
+MQTT. Values are clamped to 0 through 255. A missing `value` is treated as 0.
 
 ### WiFi
 
 | Method | Route | |
 |---|---|---|
 | `GET` | `/api/wifi` | Saved networks |
-| `POST` | `/api/wifi` | `{"ssid":…, "password":…, "priority":…}` → updated list |
-| `DELETE` | `/api/wifi/<ssid>` | → updated list |
-| `GET` | `/api/wifi/scan` | Visible networks: `[{"ssid":…, "rssi":…}]` |
+| `POST` | `/api/wifi` | `{"ssid":…, "password":…, "priority":…}`, returns the updated list |
+| `DELETE` | `/api/wifi/<ssid>` | Returns the updated list |
+| `GET` | `/api/wifi/scan` | Visible networks, as `[{"ssid":…, "rssi":…}]` |
 
-`POST /api/wifi` saves without connecting — unlike the serial `Add-Wifi`.
+`POST /api/wifi` saves without connecting, unlike the serial `Add-Wifi`.
 
-### MQTT, system, mesh
+### Configuration
 
 | Method | Route | |
 |---|---|---|
-| `GET` / `POST` | `/api/mqtt` | Read / merge MQTT config; a `POST` also restarts the client |
-| `GET` / `POST` | `/api/system` | Read / merge `system.json` (pins, hostname, hotspot) |
-| `GET` / `POST` | `/api/mesh` | Read / merge `mesh.json` (**WIP, stored only**) |
+| `GET` and `POST` | `/api/mqtt` | Read or merge the MQTT config. A `POST` also restarts the client |
+| `GET` and `POST` | `/api/system` | Read or merge `system.json`: pins, hostname, hotspot, static IP |
+| `GET` and `POST` | `/api/mesh` | Read or merge `mesh.json`, work in progress, stored only |
+| `GET` | `/api/info` | Version, author, repository and wiki links, for the Info page |
 
 `POST` merges into the existing config, so you can send a single key.
 
@@ -348,12 +434,10 @@ curl -X POST http://192.168.1.98/api/devices/dev-a1b2c3/channel/1 \
      -H "Content-Type: application/json" -d '{"value":128}'
 ```
 
----
-
 ## MQTT and Home Assistant
 
-MQTT is optional and **only starts when the board is on a real network** (station
-mode) — not on its own hotspot.
+MQTT is optional and only starts when the board is on a real network, not on its
+own hotspot.
 
 | Setting | Default |
 |---|---|
@@ -361,128 +445,236 @@ mode) — not on its own hotspot.
 | `discovery_prefix` | `homeassistant` |
 | `port` | `1883` |
 
-Every channel gets a unique id of `<device_id>_<offset>`, e.g. `dev-a1b2c3_1`.
+Every channel gets a unique id of `<device_id>_<offset>`, for example
+`dev-a1b2c3_1`.
 
 ### Topics
 
 | Topic | Direction | Payload |
 |---|---|---|
-| `<base_topic>/<uid>/set` | in | Slider: a number `0`-`255`. Button: **any payload fires 255**. |
-| `<base_topic>/<uid>/state` | out | Current value, sliders only |
+| `<base_topic>/<uid>/set` | in | Slider: a number from 0 to 255. Switch: `ON`, `OFF`, `TRUE`, `FALSE`, `1`, `0`, `255`. Trigger and momentary: any payload fires 255. |
+| `<base_topic>/<uid>/state` | out | The current value, for sliders and switches only |
 
 ### Discovery
 
-On connect — and whenever fixtures change — the board publishes **retained**
-discovery configs:
+On connect, and whenever fixtures change, the board publishes retained discovery
+configs:
 
 | Channel type | Discovery topic | Entity |
 |---|---|---|
 | `slider` | `<discovery_prefix>/number/<uid>/config` | `number`, min 0, max 255, step 1 |
-| `button` | `<discovery_prefix>/button/<uid>/config` | `button` |
+| `button-switch` | `<discovery_prefix>/switch/<uid>/config` | `switch`, on 255, off 0 |
+| `button` and `button-momentary` | `<discovery_prefix>/button/<uid>/config` | `button` |
 
-All channels of a fixture share one `device` block (identified by the device id,
-manufacturer `DIY`, model `DMX-over-WiFi`), so Home Assistant groups them as one
-device.
-
----
+All channels of a fixture share one `device` block, identified by the device id,
+so Home Assistant groups them as a single device.
 
 ## Timing and latency
 
 > [!WARNING]
-> **The delay between a command and the fixture reacting is not guaranteed.** It
-> varies, and it can spike. Don't put this box anywhere a late or dropped cue
+> The delay between a command and the fixture reacting is not guaranteed. It
+> varies, and it can spike. Do not put this box anywhere a late or dropped cue
 > matters.
 
-The chain is `browser or MQTT → WiFi → HTTP/MQTT handler → DMX buffer → next DMX
-frame`, and only the last hop has anything like a fixed cost.
+The chain is browser or MQTT, then WiFi, then the HTTP or MQTT handler, then the
+DMX buffer, then the next DMX frame. Only the last hop has anything like a fixed
+cost.
 
 | Stage | Behaviour |
 |---|---|
-| WiFi | Best-effort. Retries, interference, a busy AP or a roaming client add tens to hundreds of ms, unpredictably |
-| MQTT | Adds a broker round-trip; a reconnect blocks the loop while it happens |
-| Main loop | `code.py` polls HTTP, MQTT, the DMX refresh and the serial console in one `while True`. No pre-emption, no priorities — a slow request delays the next frame |
-| CircuitPython | Interpreted, and the garbage collector can pause the loop at any point |
-| DMX frame | `FRAME_INTERVAL = 0.025` is checked from the loop with `time.monotonic()`, not driven by a timer interrupt. The break is generated by re-opening the UART at 83333 baud, so its width depends on how fast that call returns |
+| WiFi | Best effort. Retries, interference, a busy access point or a roaming client add tens to hundreds of milliseconds, unpredictably |
+| MQTT | Adds a broker round trip, and a reconnect blocks the loop while it happens |
+| Main loop | `code.py` polls HTTP, MQTT, the DMX refresh and the serial console in one `while True`. No preemption and no priorities, so a slow request delays the next frame |
+| CircuitPython | Interpreted, with a garbage collector that can pause the loop at any point |
+| DMX frame | `FRAME_INTERVAL` is 25 ms, checked from the loop with `time.monotonic()` rather than driven by a timer interrupt. The break is generated by reopening the UART at 83333 baud, so its width depends on how fast that call returns |
 
-What *is* dependable: once a value is in the buffer it keeps going out at roughly
-40 fps, so fixtures hold state and don't flicker. It is the *arrival* of a new
-value that has no deadline.
+What is dependable: once a value is in the buffer it keeps going out at roughly
+40 frames a second, so fixtures hold state and do not flicker. It is the arrival
+of a new value that has no deadline.
 
-Practical consequences:
+In practice:
 
-- Fine for setting levels, static looks, colour changes, house lights, ambience.
-- Not for anything that has to land on a beat, and not for pyro, moving trusses or
-  anything safety-related.
-- Chases and effects should be generated **on the fixture** (built-in programs)
-  rather than streamed channel-by-channel from a browser.
+- Fine for setting levels, static looks, colour changes, house lights and
+  ambience.
+- Not for anything that has to land on a beat, and not for pyro, moving trusses
+  or anything safety related.
+- Chases and effects should be generated on the fixture, using its built-in
+  programs, rather than streamed channel by channel from a browser.
 
-If you need deterministic timing, drive the rig from a real DMX desk or an
-Art-Net/sACN node on a wired network.
+If you need deterministic timing, drive the rig from a real lighting desk or an
+Art-Net or sACN node on a wired network.
 
----
+## Test suite
+
+`test/` holds scripts that check the firmware works **before it goes on the
+board**. Nothing there ships to the ESP32 and nothing needs hardware.
+
+This suite is under constant development. It grows with the firmware, so every
+feature that lands should arrive with the tests that prove it, and every bug that
+gets fixed should leave a test behind so it cannot come back. Expect it to look
+different in a month.
+
+### Running it
+
+```bash
+docker compose -f test/docker-compose.yml run --rm tests
+```
+
+| Service | Runs |
+|---|---|
+| `tests` | Everything, firmware and browser |
+| `unit` | Firmware only, no browser, fast enough to run while editing `src/` |
+| `ui` | The browser tests only |
+| `screenshots` | Rewrites `docs/images/ui-*.png` from the mock board |
+
+Without Docker, on Python 3.11 or newer:
+
+```bash
+pip install -r test/requirements.txt
+playwright install chromium        # only for the browser tests
+python -m pytest test -v
+```
+
+Without playwright the browser tests skip and everything else still runs.
+
+### The fake ESP32
+
+`test/fake_esp32/` provides stand-ins for the CircuitPython modules the firmware
+imports: `board`, `busio`, `digitalio`, `microcontroller`, `storage`, `usb_cdc`,
+`wifi`, `socketpool`, `adafruit_httpserver` and `adafruit_minimqtt`. Putting that
+directory on `sys.path` makes `import board` resolve there instead of failing, so
+`src/` runs unmodified on a desktop Python.
+
+They are not emulators. They record what the firmware did to them and let a test
+feed values back in. The fake radio, for example, is told which networks exist
+and with what password, so the priority ordering and the hotspot fallback are
+exercised for real rather than mocked out.
+
+Real standard library modules are deliberately not stubbed. `os`, `json`, `time`
+and `ipaddress` all exist on CPython with the API the firmware uses.
+
+### What it covers
+
+| File | Area |
+|---|---|
+| `test_settings_store.py` | JSON config under `/data`, defaults, recovery from a corrupt file |
+| `test_dmx_driver.py` | Buffer, clamping, break and mark-after-break, refresh rate, direction pin |
+| `test_devices.py` | Fixtures, all four channel types, DMX address mapping, persistence |
+| `test_wifi_manager.py` | Saved networks, priority ordering, static IP, hotspot fallback |
+| `test_mqtt_manager.py` | Connection lifecycle, discovery payloads, command handling |
+| `test_serial_console.py` | Every serial command, its arguments and its error paths |
+| `test_web_api.py` | Every HTTP route the web UI calls |
+| `test_boot.py` | Which side owns the filesystem after boot |
+| `test_integration.py` | The whole stack wired the way `code.py` wires it |
+| `test_ui.py` | The real web UI in a real browser, against a mock board |
+
+### The mock board
+
+`test/ui/mock_server.py` serves the real `www/` files backed by a fake API with
+demo fixtures covering every channel type. Run it on its own to poke at the UI in
+a browser with no hardware attached:
+
+```bash
+python test/ui/mock_server.py --port 8000
+```
+
+`test/ui/screenshot_ui.py` drives the same mock board to regenerate the
+screenshots in `docs/images/`. They therefore always show a populated UI and
+never leak a real WiFi list.
+
+### One trap worth knowing about
+
+The repo root holds `code.py`, the firmware entry point. On CPython that name
+shadows the standard library's `code` module, which `pdb` imports, which pytest
+imports at startup. Left alone, starting pytest runs the firmware and hangs in
+its main loop. `test/conftest.py` drops the repo root from the front of
+`sys.path`, pins the real module, and only then puts the repo root back at the
+end. If you ever see pytest produce no output at all, that guard is the first
+thing to check.
+
+### Adding to it
+
+New firmware feature: add its tests next to the module they cover, and if it
+touches the web UI add a browser test too.
+
+New CircuitPython import in `src/`: add a stub in `test/fake_esp32/`. Keep it as
+thin as the firmware needs but no thinner, since a stub that accepts calls the
+real hardware would reject makes the suite lie.
 
 ## Configuration files
 
 The board writes its state as JSON under `/data` on `CIRCUITPY`. The directory is
-**git-ignored** — it contains WiFi and MQTT passwords in clear text. Missing files
-are recreated from defaults on first read.
+gitignored, because it contains WiFi and MQTT passwords in clear text. Missing
+files are recreated from defaults on first read, and a corrupt file is replaced
+rather than left to fail again on the next boot.
 
-| File | Holds | Default |
-|---|---|---|
-| `wifi_networks.json` | `[{ssid, password, priority}]` | `[]` |
-| `devices.json` | `[{id, name, start_channel, channels[]}]` | `[]` |
-| `mqtt.json` | `enabled, host, port, username, password, base_topic, discovery_prefix` | disabled, `dmxwifi` / `homeassistant` |
-| `system.json` | `dmx_tx_pin, dmx_dir_pin_enabled, dmx_dir_pin, hostname, ap_ssid, ap_password, ap_ip` | `D4`, direction pin off, `D3`, `ESP-DMX`, `ESP-DMX`, `DMX4ALL1`, `1.1.1.1` |
-| `mesh.json` | `role, ssid, password` | `none` (**WIP**) |
+| File | Holds |
+|---|---|
+| `wifi_networks.json` | `[{ssid, password, priority}]` |
+| `devices.json` | `[{id, name, start_channel, channels[]}]` |
+| `mqtt.json` | `enabled`, `host`, `port`, `username`, `password`, `base_topic`, `discovery_prefix` |
+| `system.json` | `dmx_tx_pin`, `dmx_dir_pin_enabled`, `dmx_dir_pin`, `hostname`, `ap_ssid`, `ap_password`, `ap_ip`, `sta_ip_mode`, `sta_static_ip`, `sta_static_netmask`, `sta_static_gateway`, `sta_static_dns` |
+| `mesh.json` | `role`, `ssid`, `password` (work in progress) |
+
+Shipping defaults: DMX TX on `D4`, direction pin disabled on `D3`, hostname and
+hotspot SSID `ESP-DMX`, hotspot password `DMX4ALL1`, hotspot address `1.1.1.1`,
+DHCP, MQTT disabled with base topic `dmxwifi`.
+
+Static IP is applied after joining a network, and only when `sta_ip_mode` is
+`static` and both an address and a gateway are set. If the values do not parse,
+the board stays on DHCP rather than dropping off the network.
 
 To wipe a setting back to defaults, delete its file while the filesystem is
-unlocked, then reboot.
-
----
+unlocked, then reboot. Or set it in `.env` and deploy with `--reset-config`.
 
 ## Troubleshooting
 
-**`deploy.py` says the target is read-only**
-The board owns the filesystem. Follow
-[Unlocking it for a deploy](#unlocking-it-for-a-deploy).
+**pytest produces no output and never finishes**
+See [the trap above](#one-trap-worth-knowing-about). Something put the repo root
+early on `sys.path` and pytest is running the firmware.
+
+**`deploy.py` cannot unlock the drive**
+It needs pyserial and the right serial port. Pass `--port` explicitly. If the
+board is running very old firmware, the raw REPL fallback needs the board to be
+at the REPL rather than running `code.py`.
 
 **`ERR Cannot remount '/' when visible via USB`**
-`Set-System unlock-write` was sent while the `CIRCUITPY` volume was still mounted.
-Eject it first, then send the command again.
+`Set-System unlock-write` was sent while the volume was still mounted. Eject it
+first, or just use `Set-System reboot-config` instead.
 
 **The drive never comes back after ejecting it**
-Windows leaves the media "not present" until something rescans. *Device Manager →
-Action → Scan for hardware changes*, or `rescan` in an elevated `diskpart`. A
-`Reboot` over serial also brings it back, but that re-locks the filesystem.
+Windows leaves the media absent until something rescans. Use *Device Manager*,
+*Action*, *Scan for hardware changes*, or `rescan` in an elevated `diskpart`. A
+`Reboot` over serial also brings it back, though that re-locks the filesystem.
 
 **Serial port opens but nothing answers**
-Make sure you picked the board's USB CDC port (`COM9`-style *USB serial device*,
-not a Bluetooth COM port) and that you are using `tools/serial_console.py` — it
-forces DTR/RTS, which some terminals don't.
+Make sure you picked the board's USB serial device rather than a Bluetooth COM
+port, and that you are using `tools/serial_console.py`, which forces DTR and RTS.
 
-**Pin change had no effect**
+**A pin change had no effect**
 `tx-pin` and `dir-pin` are only read at startup. Reboot.
 
 **`ERR` on a pin name**
-It must be a CircuitPython `board` attribute for your board (`D4`, `IO7`, …).
-A wrong name raises at boot, in the `DmxDriver` constructor.
+It must be a CircuitPython `board` attribute for your board, such as `D4` or
+`IO7`. A wrong name raises at boot, inside the `DmxDriver` constructor.
 
-**Config changes don't survive a reboot**
-The filesystem was unlocked with `unlock-write`, so CircuitPython has no write
-access. Reboot first, then change settings.
+**Config changes do not survive a reboot**
+The board is in config mode, or the filesystem was unlocked with
+`unlock-write`, so CircuitPython has no write access. Reboot first, then change
+settings.
 
-**A cue arrived late, or a slider felt sluggish**
-Expected — see [Timing and latency](#timing-and-latency). There are no delivery or
-timing guarantees.
+**Cannot reach the UI**
+Check `get-status wifi` over serial. `mode=ap` means it fell back to its hotspot,
+so join `ESP-DMX` and browse to <http://1.1.1.1>.
 
-**Can't reach the UI**
-Check `get-status wifi` over serial. `mode=ap` means it fell back to its hotspot:
-join `ESP-DMX` and browse to <http://1.1.1.1>.
-
-**Fixture responds on the wrong DMX address**
-The address is `start_channel + offset - 1`. A fixture at start channel 10 with a
+**A fixture responds on the wrong DMX address**
+The address is `start_channel + offset - 1`. A fixture starting at 10 with a
 channel at offset 1 drives DMX address 10, not 11.
 
 **MQTT never connects**
 It only starts in station mode, and only if `enabled` is set with a non-empty
 host. Check with `get-status mqtt`.
+
+**A cue arrived late, or a fader felt sluggish**
+Expected. See [Timing and latency](#timing-and-latency). There are no delivery or
+timing guarantees.
