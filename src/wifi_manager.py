@@ -10,6 +10,7 @@ DEFAULT_AP_NETMASK = "255.255.255.0"
 class WifiManager:
     def __init__(self):
         self.mode = None
+        self.ap_ssid = None
         self.networks = settings_store.load("wifi_networks.json")
 
     def reload_networks(self):
@@ -41,15 +42,18 @@ class WifiManager:
         for net in ordered:
             if not net.get("ssid"):
                 continue
-            try:
-                wifi.radio.connect(
-                    net["ssid"], net.get("password") or None, timeout=timeout
-                )
-                if wifi.radio.ipv4_address:
-                    self.mode = "sta"
-                    return True
-            except Exception:
-                continue
+            if self.try_connect(net["ssid"], net.get("password"), timeout=timeout):
+                return True
+        return False
+
+    def try_connect(self, ssid, password, timeout=8):
+        try:
+            wifi.radio.connect(ssid, password or None, timeout=timeout)
+            if wifi.radio.ipv4_address:
+                self.mode = "sta"
+                return True
+        except Exception:
+            pass
         return False
 
     def start_ap(self, ssid, password, ip):
@@ -65,3 +69,20 @@ class WifiManager:
         except Exception:
             pass
         self.mode = "ap"
+        self.ap_ssid = ssid
+
+    def status(self):
+        info = {"mode": self.mode, "ssid": None, "ip": None}
+        try:
+            if self.mode == "sta":
+                if wifi.radio.ap_info:
+                    info["ssid"] = wifi.radio.ap_info.ssid
+                if wifi.radio.ipv4_address:
+                    info["ip"] = str(wifi.radio.ipv4_address)
+            elif self.mode == "ap":
+                info["ssid"] = self.ap_ssid
+                if wifi.radio.ipv4_address_ap:
+                    info["ip"] = str(wifi.radio.ipv4_address_ap)
+        except Exception:
+            pass
+        return info

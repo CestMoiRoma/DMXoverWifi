@@ -47,6 +47,13 @@ class MqttManager:
                 pass
             self.client = None
 
+    def status(self):
+        return {
+            "enabled": bool(self.cfg.get("enabled")),
+            "broker": self.cfg.get("host", ""),
+            "connected": bool(self.client and self.client.is_connected()),
+        }
+
     def _base_topic(self):
         return self.cfg.get("base_topic", "dmxwifi")
 
