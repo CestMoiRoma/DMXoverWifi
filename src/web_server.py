@@ -6,12 +6,12 @@ from adafruit_httpserver import (
 from . import settings_store
 from .version import VERSION
 
-_REPO_URL = "https://github.com/CestMoiRoma/DMX-Over-Wifi-Mark-II"
+_REPO_URL = "https://github.com/CestMoiRoma/DMXoverWifi"
 _INFO = {
     "version": VERSION,
     "author": {"name": "CestMoiRoma", "url": "https://github.com/CestMoiRoma"},
     "repo": _REPO_URL,
-    "wiki_online": _REPO_URL + "/blob/master/WIKI.md",
+    "wiki_online": _REPO_URL + "/blob/main/WIKI.md",
     "wiki_local": "/wiki.md",
 }
 
