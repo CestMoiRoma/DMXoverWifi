@@ -156,6 +156,22 @@ def parse_env(path):
     return env
 
 
+def _as_bool(value, default=False):
+    v = str(value or "").strip().lower()
+    if v in ("true", "1", "yes", "on"):
+        return True
+    if v in ("false", "0", "no", "off"):
+        return False
+    return default
+
+
+def _as_int(value, default=0):
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError):
+        return default
+
+
 def wifi_defaults_from_env(env):
     """Extract WIFI_N_SSID/PASSWORD/PRIORITY groups into wifi_networks entries."""
     groups = {}
@@ -168,20 +184,123 @@ def wifi_defaults_from_env(env):
         n, field = parts[1], parts[2].lower()
         groups.setdefault(n, {})[field] = value
     out = []
-    for n in sorted(groups.keys()):
+    for n in sorted(groups.keys(), key=lambda x: _as_int(x)):
         g = groups[n]
         if not g.get("ssid"):
             continue
-        try:
-            priority = int(g.get("priority", 0) or 0)
-        except ValueError:
-            priority = 0
         out.append({
             "ssid": g["ssid"],
             "password": g.get("password", ""),
-            "priority": priority,
+            "priority": _as_int(g.get("priority", 0)),
         })
     return out
+
+
+def mqtt_defaults_from_env(env):
+    """Return a dict for mqtt.json if any MQTT_* key is present, else None."""
+    if not any(k.startswith("MQTT_") for k in env):
+        return None
+    return {
+        "enabled": _as_bool(env.get("MQTT_ENABLED"), False),
+        "host": env.get("MQTT_HOST", ""),
+        "port": _as_int(env.get("MQTT_PORT", 1883), 1883),
+        "username": env.get("MQTT_USERNAME", ""),
+        "password": env.get("MQTT_PASSWORD", ""),
+        "base_topic": env.get("MQTT_BASE_TOPIC", "dmxwifi"),
+        "discovery_prefix": env.get("MQTT_DISCOVERY_PREFIX", "homeassistant"),
+    }
+
+
+SYSTEM_KEYS = (
+    "DMX_TX_PIN", "DMX_DIR_PIN_ENABLED", "DMX_DIR_PIN",
+    "HOSTNAME", "AP_SSID", "AP_PASSWORD", "AP_IP",
+    "STA_IP_MODE", "STA_STATIC_IP", "STA_STATIC_NETMASK",
+    "STA_STATIC_GATEWAY", "STA_STATIC_DNS",
+)
+
+
+def system_defaults_from_env(env):
+    if not any(k in env for k in SYSTEM_KEYS):
+        return None
+    return {
+        "dmx_tx_pin": env.get("DMX_TX_PIN", "D4"),
+        "dmx_dir_pin_enabled": _as_bool(env.get("DMX_DIR_PIN_ENABLED"), False),
+        "dmx_dir_pin": env.get("DMX_DIR_PIN", "D3"),
+        "hostname": env.get("HOSTNAME", "ESP-DMX"),
+        "ap_ssid": env.get("AP_SSID", "ESP-DMX"),
+        "ap_password": env.get("AP_PASSWORD", "DMX4ALL1"),
+        "ap_ip": env.get("AP_IP", "1.1.1.1"),
+        "sta_ip_mode": env.get("STA_IP_MODE", "dhcp"),
+        "sta_static_ip": env.get("STA_STATIC_IP", ""),
+        "sta_static_netmask": env.get("STA_STATIC_NETMASK", "255.255.255.0"),
+        "sta_static_gateway": env.get("STA_STATIC_GATEWAY", ""),
+        "sta_static_dns": env.get("STA_STATIC_DNS", "1.1.1.1"),
+    }
+
+
+def mesh_defaults_from_env(env):
+    if not any(k.startswith("MESH_") for k in env):
+        return None
+    return {
+        "role": env.get("MESH_ROLE", "none"),
+        "ssid": env.get("MESH_SSID", ""),
+        "password": env.get("MESH_PASSWORD", ""),
+    }
+
+
+def devices_defaults_from_env(env):
+    """Extract DEVICE_N_* / DEVICE_N_CHANNEL_M_* groups into device entries."""
+    device_groups = {}
+    channel_groups = {}  # (device_n, channel_m) -> {field: value}
+    for key, value in env.items():
+        if not key.startswith("DEVICE_"):
+            continue
+        parts = key.split("_")
+        # DEVICE_1_NAME                 -> parts = [DEVICE, 1, NAME]
+        # DEVICE_1_START_CHANNEL        -> parts = [DEVICE, 1, START, CHANNEL]
+        # DEVICE_1_CHANNEL_1_NAME       -> parts = [DEVICE, 1, CHANNEL, 1, NAME]
+        if len(parts) < 3:
+            continue
+        dev_n = parts[1]
+        rest = "_".join(parts[2:]).lower()
+        if rest.startswith("channel_"):
+            # channel_<m>_<field>
+            sub = rest[len("channel_"):]
+            ch_parts = sub.split("_", 1)
+            if len(ch_parts) != 2:
+                continue
+            ch_m, ch_field = ch_parts
+            channel_groups.setdefault((dev_n, ch_m), {})[ch_field] = value
+        else:
+            device_groups.setdefault(dev_n, {})[rest] = value
+
+    if not device_groups:
+        return None
+
+    devices = []
+    for dev_n in sorted(device_groups.keys(), key=lambda x: _as_int(x)):
+        g = device_groups[dev_n]
+        if not g.get("name"):
+            continue
+        channels = []
+        ch_keys = sorted(
+            (k for k in channel_groups if k[0] == dev_n),
+            key=lambda k: _as_int(k[1]),
+        )
+        for i, ch_key in enumerate(ch_keys, start=1):
+            cg = channel_groups[ch_key]
+            channels.append({
+                "offset": _as_int(cg.get("offset", i), i),
+                "name": cg.get("name", "Channel %d" % i),
+                "type": cg.get("type", "slider"),
+            })
+        devices.append({
+            "id": "dev-env%s" % dev_n,
+            "name": g["name"],
+            "start_channel": _as_int(g.get("start_channel", 1), 1),
+            "channels": channels,
+        })
+    return devices
 
 
 def merge_wifi_defaults(target, entries):
@@ -207,6 +326,46 @@ def merge_wifi_defaults(target, entries):
     return added
 
 
+def write_config_if_absent(target, filename, data, force=False):
+    """Write data/<filename> from the given dict/list. Skips if the file
+    already exists unless force=True."""
+    data_dir = target / "data"
+    data_dir.mkdir(exist_ok=True)
+    fp = data_dir / filename
+    if fp.exists() and not force:
+        return False
+    fp.write_text(json.dumps(data))
+    return True
+
+
+def apply_env_defaults(env, target, force):
+    """Push .env-derived defaults into target/data/*.json."""
+    wifi_entries = wifi_defaults_from_env(env)
+    if wifi_entries:
+        if force:
+            (target / "data").mkdir(exist_ok=True)
+            (target / "data" / "wifi_networks.json").write_text(json.dumps(wifi_entries))
+            print("  wifi_networks.json: overwritten with %d entries" % len(wifi_entries))
+        else:
+            added = merge_wifi_defaults(target, wifi_entries)
+            print("  wifi_networks.json: merged %d new entries" % added)
+
+    for filename, defaults_fn in (
+        ("mqtt.json", mqtt_defaults_from_env(env)),
+        ("system.json", system_defaults_from_env(env)),
+        ("mesh.json", mesh_defaults_from_env(env)),
+        ("devices.json", devices_defaults_from_env(env)),
+    ):
+        if defaults_fn is None:
+            continue
+        written = write_config_if_absent(target, filename, defaults_fn, force=force)
+        if written:
+            action = "overwritten" if force else "created"
+            print("  %s: %s from .env" % (filename, action))
+        else:
+            print("  %s: already exists, kept (use --reset-config to overwrite)" % filename)
+
+
 def wait_for_writable(target, timeout=25):
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -227,6 +386,12 @@ def main():
         "--no-reboot",
         action="store_true",
         help="Leave the board in config mode after deploy (skip final Reboot).",
+    )
+    parser.add_argument(
+        "--reset-config",
+        action="store_true",
+        help="Force-overwrite target data/*.json from .env (default: only "
+             "write missing files; wifi is merged either way).",
     )
     args = parser.parse_args()
 
@@ -282,12 +447,8 @@ def main():
 
     env_path = repo_root / ".env"
     if env_path.exists():
-        entries = wifi_defaults_from_env(parse_env(env_path))
-        if entries:
-            added = merge_wifi_defaults(target, entries)
-            print(
-                "Merged %d WiFi entries from .env (existing SSIDs left alone)" % added
-            )
+        print("Applying .env defaults:")
+        apply_env_defaults(parse_env(env_path), target, force=args.reset_config)
 
     if unlocked_us and not args.no_reboot:
         print("Rebooting board back to normal mode...")

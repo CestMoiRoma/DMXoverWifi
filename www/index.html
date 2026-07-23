@@ -53,6 +53,18 @@
 
   <section id="view-settings" class="view">
     <div class="section">
+      <h2>Configuration</h2>
+      <p class="hint" style="margin: 0 0 0.5rem 0;">
+        Download the current live config as a <code>.env</code> file. Drop it next
+        to <code>tools/deploy.py</code> so the next flash starts from this exact
+        state.
+      </p>
+      <div class="form-actions" style="justify-content: flex-start;">
+        <a class="btn-link" href="/api/export-env" download="config.env">Export .env</a>
+      </div>
+    </div>
+
+    <div class="section">
       <h2>WiFi</h2>
       <div id="wifi-list"></div>
       <form id="wifi-form" class="form-inline">
