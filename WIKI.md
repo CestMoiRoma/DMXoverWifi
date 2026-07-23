@@ -372,7 +372,7 @@ means the whole file gets written.
 | `DMX_TX_PIN` | `D4` | CircuitPython `board` pin wired to the MAX485 `DI` |
 | `DMX_DIR_PIN_ENABLED` | `false` | Leave off when `DE` and `RE` are tied to VCC |
 | `DMX_DIR_PIN` | `D3` | Pin driving `DE` and `RE`, used only when the above is on |
-| `HOSTNAME` | `ESP-DMX` | |
+| `HOSTNAME` | `ESP-DMX` | Stored and reported by `get-status`, but not yet handed to the radio, so it has no effect today |
 | `AP_SSID` | `ESP-DMX` | Config hotspot name |
 | `AP_PASSWORD` | `DMX4ALL1` | Empty makes the hotspot open |
 | `AP_IP` | `1.1.1.1` | Address the board serves the UI on in hotspot mode |
@@ -790,8 +790,14 @@ Static IP is applied after joining a network, and only when `sta_ip_mode` is
 `static` and both an address and a gateway are set. If the values do not parse,
 the board stays on DHCP rather than dropping off the network.
 
+> [!NOTE]
+> `hostname` is stored, editable in Settings, exported to `.env` and reported by
+> `get-status`, but nothing hands it to the radio yet, so it currently has no
+> effect on the network. Applying it and announcing `esp-dmx.local` over mDNS is
+> on the [roadmap](README.md#reliability-and-operations).
+
 To wipe a setting back to defaults, delete its file while the filesystem is
-unlocked, then reboot. Or set it in `.env` and deploy with `--reset-config`.
+unlocked, then reboot. Or set it in `.env` and deploy with `--force`.
 
 ## Troubleshooting
 

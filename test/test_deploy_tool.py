@@ -428,6 +428,44 @@ def test_the_seeded_files_are_readable_by_the_firmware(target, monkeypatch):
     assert [d.name for d in manager.devices] == ["Par"]
 
 
+# -- what gets copied to the board -----------------------------------------
+
+
+def test_desktop_bytecode_is_kept_off_the_board(tmp_path):
+    """Running the test suite leaves __pycache__ in src/, and the board has a
+    few hundred KB free. Those .pyc files are the wrong Python version anyway."""
+    source = tmp_path / "src"
+    (source / "__pycache__").mkdir(parents=True)
+    (source / "__pycache__" / "devices.cpython-312.pyc").write_bytes(b"\x00" * 64)
+    (source / "devices.py").write_text("# real firmware\n")
+    (source / "stray.pyc").write_bytes(b"\x00")
+
+    import shutil
+
+    destination = tmp_path / "CIRCUITPY" / "src"
+    shutil.copytree(source, destination, ignore=deploy.SKIP_ON_BOARD)
+
+    copied = {p.name for p in destination.rglob("*")}
+    assert "devices.py" in copied
+    assert "__pycache__" not in copied
+    assert not any(name.endswith(".pyc") for name in copied)
+
+
+def test_editor_and_os_droppings_are_kept_off_the_board(tmp_path):
+    source = tmp_path / "www"
+    source.mkdir()
+    (source / "index.html").write_text("<html></html>")
+    (source / ".DS_Store").write_bytes(b"\x00")
+    (source / "Thumbs.db").write_bytes(b"\x00")
+
+    import shutil
+
+    destination = tmp_path / "CIRCUITPY" / "www"
+    shutil.copytree(source, destination, ignore=deploy.SKIP_ON_BOARD)
+
+    assert {p.name for p in destination.iterdir()} == {"index.html"}
+
+
 # -- the shipped .env.example ----------------------------------------------
 
 

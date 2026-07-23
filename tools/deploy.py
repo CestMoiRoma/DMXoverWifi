@@ -37,6 +37,12 @@ from pathlib import Path
 
 ITEMS = ("boot.py", "code.py", "src", "www", "lib")
 
+# Running the test suite imports src/ under desktop CPython, which leaves
+# __pycache__ directories behind. Those .pyc files are the wrong Python version
+# for CircuitPython, so the board cannot use them, and the CIRCUITPY volume only
+# has a few hundred KB to spare. Keep them off the board.
+SKIP_ON_BOARD = shutil.ignore_patterns("__pycache__", "*.pyc", ".DS_Store", "Thumbs.db")
+
 
 def prompt_target():
     if sys.platform == "win32":
@@ -493,7 +499,7 @@ def main():
             # but we want a clean overwrite so removed files don't linger.
             if dst.exists():
                 shutil.rmtree(dst)
-            shutil.copytree(src, dst)
+            shutil.copytree(src, dst, ignore=SKIP_ON_BOARD)
         else:
             shutil.copy2(src, dst)
 

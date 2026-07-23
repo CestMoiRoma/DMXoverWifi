@@ -42,7 +42,7 @@ expose every DMX channel to Home Assistant over MQTT.
 | **Static or DHCP** | Take whatever address the router hands out, or pin a fixed one |
 | **MQTT and Home Assistant** | Optional. Publishes auto-discovery configs, so every channel turns up as a `number`, `switch` or `button` entity |
 | **Serial console** | A full text command set over USB. Configure, inspect and reboot the board without a browser |
-| **Off-board test suite** | 318 tests that run the firmware on a PC against a fake ESP32, so a change can be checked before it is flashed |
+| **Off-board test suite** | 320 tests that run the firmware on a PC against a fake ESP32, so a change can be checked before it is flashed |
 | **Parent and child mesh** | Present in the UI and the settings store. **Work in progress: stored only, no radio behaviour yet** |
 
 ## Hardware
@@ -352,7 +352,10 @@ Working today: DMX output, the web UI, the fixture model, multi-network WiFi,
 hotspot fallback, static IP, MQTT with Home Assistant discovery, the serial
 console, the deploy tooling and the test suite.
 
-Planned:
+Nothing below is a promise, and the order is rough. Items marked **carried over**
+were already on the [ESPDMX](https://github.com/CestMoiRoma/ESPDMX) roadmap.
+
+### Getting DMX in and out
 
 - **DMX input.** Wire `RO` and a direction pin so the board can *receive* a
   universe from a real lighting desk instead of only generating one. The point is
@@ -360,8 +363,69 @@ Planned:
   it over WiFi to the child nodes, which output it locally. That turns the
   project into a wireless DMX distribution system rather than a standalone
   controller.
+- **Several universes per board.** More than one MAX485 on the same ESP32, each
+  on its own TX pin, each with its own 512-channel buffer. The fixture model
+  already addresses channels within a device, so it mostly needs a universe field
+  and a driver instance per output. Watch the frame budget: the main loop has to
+  clock out every universe inside the same 25 ms window.
+- **Art-Net and sACN input.** Accept a universe over the network from QLC+,
+  Resolume, a grandMA on PC, or anything else that speaks the standard protocols,
+  and put it on the wire. This is the shortest path to the box being useful
+  alongside software people already run, and it shares most of its plumbing with
+  DMX input.
+
+### Talking between boards
+
+- **ESP-NOW between parent and child.** Connectionless, no access point in the
+  path, and far less latency and jitter than an HTTP or MQTT round trip. It is
+  the right transport for relaying a live universe, and it keeps working when the
+  venue WiFi does not. The obvious shape is ESP-NOW for the universe stream and
+  the existing WiFi stack for configuration.
 - **Parent and child mesh.** The UI, the serial command and the stored settings
-  exist, but nothing acts on them yet.
+  exist, but nothing acts on them yet. Blocked on the two items above, since a
+  parent needs something to relay and something to relay it over.
+
+### Hardware
+
+- **A PCB version.** **Carried over.** ESP32 module, MAX485, XLR and power on one
+  board instead of a breakout and jumper wires. Worth doing after the multi
+  universe work lands, so the board can be laid out for the final number of
+  outputs rather than redone later. Isolated RS-485 is worth the extra parts on
+  anything that leaves the workshop.
+
+### Control and interface
+
+- **Scenes.** Save the current state of the universe under a name and recall it
+  from the Home page, MQTT or the serial console. Cheap to build on the existing
+  buffer and the single most useful thing missing for real use.
+- **Blackout and a grand master.** A panic button and a global dimmer over every
+  channel. Small, and expected on anything that drives lights.
+- **Fixture profiles.** A small library of common layouts, such as a 4-channel
+  RGBW PAR or an 11-channel moving head, so adding a fixture is picking a profile
+  and a start address instead of typing channels by hand.
+- **A WebSocket for live control.** The UI currently sends one HTTP request per
+  fader movement, which is the largest avoidable part of the latency described
+  above. A single socket carrying channel updates would cut it noticeably. The
+  original ESPDMX was WebSocket only, so this brings the idea back as an
+  optimisation rather than as the whole API.
+
+### Reliability and operations
+
+- **Apply the hostname, and announce it over mDNS.** The hostname is already
+  stored, editable in Settings and exported to `.env`, but nothing ever hands it
+  to the radio, so it currently has no effect. Setting it and advertising
+  `esp-dmx.local` would end the hunt for whatever address the router handed out.
+- **Remember the last look.** The DMX buffer starts at zero on every boot, so a
+  power blip blacks out the rig until someone opens the UI. An explicit save of
+  the current state as the boot state avoids that without writing to flash on
+  every fader move.
+- **Firmware update over the network.** The board can write to its own filesystem
+  in normal operation, so it could accept an upload and replace `www/` and `src/`
+  itself. That removes the eject and unlock dance for anything that is not a
+  `boot.py` change.
+- **A watchdog.** If the main loop wedges, the rig freezes with its last frame
+  and nothing recovers it. `microcontroller.watchdog` would reset the board
+  instead.
 - **Authentication.** There is none on the web UI or the API today, so keep the
   board on a network you trust.
 
