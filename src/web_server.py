@@ -1,6 +1,16 @@
 from adafruit_httpserver import DELETE, GET, POST, PUT, FileResponse, JSONResponse, Server
 
 from . import settings_store
+from .version import VERSION
+
+_REPO_URL = "https://github.com/CestMoiRoma/DMX-Over-Wifi-Mark-II"
+_INFO = {
+    "version": VERSION,
+    "author": {"name": "CestMoiRoma", "url": "https://github.com/CestMoiRoma"},
+    "repo": _REPO_URL,
+    "wiki_online": _REPO_URL + "/blob/master/WIKI.md",
+    "wiki_local": "/wiki.md",
+}
 
 
 class WebServer:
@@ -15,6 +25,7 @@ class WebServer:
     def _register_routes(self):
         s = self.server
         s.route("/", GET)(self._index)
+        s.route("/wiki.md", GET)(self._serve_wiki)
         s.route("/api/devices", GET)(self._list_devices)
         s.route("/api/devices", POST)(self._create_device)
         s.route("/api/devices/<device_id>", PUT)(self._update_device)
@@ -30,6 +41,7 @@ class WebServer:
         s.route("/api/system", POST)(self._set_system)
         s.route("/api/mesh", GET)(self._get_mesh)
         s.route("/api/mesh", POST)(self._set_mesh)
+        s.route("/api/info", GET)(self._get_info)
 
     def start(self, port=80):
         self.server.start("0.0.0.0", port=port)
@@ -44,6 +56,9 @@ class WebServer:
 
     def _index(self, request):
         return FileResponse(request, "index.html")
+
+    def _serve_wiki(self, request):
+        return FileResponse(request, "wiki.md", content_type="text/plain")
 
     # -- devices --
 
@@ -137,3 +152,8 @@ class WebServer:
         cfg.update(data)
         settings_store.save("mesh.json", cfg)
         return JSONResponse(request, cfg)
+
+    # -- info / credits --
+
+    def _get_info(self, request):
+        return JSONResponse(request, _INFO)

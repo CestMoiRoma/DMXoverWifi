@@ -72,6 +72,13 @@ def main():
         else:
             shutil.copy2(src, dst)
 
+    # WIKI.md lives at repo root, but the HTTP server only serves from www/.
+    # Drop a copy in www/ so the Info page's "Local copy" link works offline.
+    wiki_src = repo_root / "WIKI.md"
+    if wiki_src.exists():
+        print("Syncing WIKI.md -> www/wiki.md ...")
+        shutil.copy2(wiki_src, target / "www" / "wiki.md")
+
     print("Deploy complete. Reboot the board to run the new code.")
 
 
