@@ -39,7 +39,7 @@ RUN pip install --no-cache-dir -r test/requirements.txt \
 # and data/ is board-side runtime state.
 # tools/ is here because the suite checks that what the board exports as .env is
 # what deploy.py can read back in.
-COPY pytest.ini boot.py code.py /app/
+COPY pytest.ini boot.py code.py .env.example /app/
 COPY src /app/src
 COPY www /app/www
 COPY tools /app/tools

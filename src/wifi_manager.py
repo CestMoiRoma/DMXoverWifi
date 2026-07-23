@@ -80,7 +80,7 @@ class WifiManager:
                 kwargs["ipv4_dns"] = ipaddress.IPv4Address(dns)
             wifi.radio.set_ipv4_address(**kwargs)
         except Exception:
-            # Bad values or the port doesn't support it - stick with DHCP.
+            # Bad values, or the port doesn't support it. Stick with DHCP.
             pass
 
     def start_ap(self, ssid, password, ip):
