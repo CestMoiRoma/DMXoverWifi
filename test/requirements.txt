@@ -1,0 +1,6 @@
+# Desktop-side test tooling. None of this ships to the board.
+pytest>=8.0
+
+# Drives a real Chromium against the web UI. Without it the browser tests skip
+# and the rest of the suite still runs.
+playwright>=1.40
