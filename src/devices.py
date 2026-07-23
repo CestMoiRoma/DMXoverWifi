@@ -3,7 +3,7 @@ import os
 from . import settings_store
 
 DMX_CHANNELS = 512
-CHANNEL_TYPES = ("slider", "button")
+CHANNEL_TYPES = ("slider", "button", "button-momentary", "button-switch")
 
 
 def _new_id():

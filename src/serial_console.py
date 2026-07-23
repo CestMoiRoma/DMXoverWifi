@@ -25,7 +25,8 @@ HELP_LINES = (
     "Set-System reboot-config                          - arm config mode + reset (PC gets"
     " write access across reboots; used by tools/deploy.py auto-unlock)",
     "Set-device add name=<name>                        - add a device",
-    "Set-device add-channel device=<name> name=<ch> channel=<offset> mode=<slider|bool>",
+    "Set-device add-channel device=<name> name=<ch> channel=<offset>"
+    " mode=<slider|button|momentary|switch>",
     "Set-device del-channel name=<ch> [device=<name>]  - remove a channel",
     "Set-device del device=<name>                      - remove a device",
     "get-status [all|wifi|mqtt|devices|mesh]",
@@ -38,7 +39,11 @@ HELP_LINES = (
 
 def _normalize_type(value):
     value = (value or "slider").strip().lower()
-    if value in ("button", "btn", "bool", "boolean"):
+    if value in ("button-momentary", "momentary", "btn-momentary", "hold"):
+        return "button-momentary"
+    if value in ("button-switch", "switch", "btn-switch", "toggle"):
+        return "button-switch"
+    if value in ("button", "btn", "trigger", "bool", "boolean"):
         return "button"
     return "slider"
 
@@ -335,11 +340,17 @@ class SerialConsole:
         )
 
     def _sys_reboot_config(self, args):
-        # Arms boot.py's double-reset marker so the next boot enters config
-        # mode (host-writable filesystem). More reliable than a live remount
-        # because the whole USB stack re-enumerates cleanly through boot.py.
+        # Arms boot.py's config-mode marker so the next boot skips the
+        # readonly=False remount, leaving the filesystem PC-writable.
+        # Requires microcontroller.nvm (most ESP32 variants have it; some
+        # strip it via the partition table).
+        try:
+            microcontroller.nvm[0] = 0x42  # CONFIG_MODE_MAGIC in boot.py
+        except Exception as exc:
+            raise ValueError(
+                "cannot arm config mode: microcontroller.nvm unavailable (%s)" % exc
+            )
         self._write("OK entering config mode via reset")
-        microcontroller.nvm[0] = 0x42  # DOUBLE_RESET_MAGIC in boot.py
         microcontroller.reset()
         return []
 

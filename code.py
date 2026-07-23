@@ -1,5 +1,3 @@
-import time
-
 import board
 import microcontroller
 import socketpool
@@ -14,8 +12,6 @@ from src.web_server import WebServer
 from src.wifi_manager import WifiManager
 
 CONFIG_MODE_FLAG_INDEX = 1
-DOUBLE_RESET_MARKER_INDEX = 0
-BOOT_SETTLE_SECONDS = 2.5
 
 
 def _in_config_mode():
@@ -23,13 +19,6 @@ def _in_config_mode():
         return microcontroller.nvm[CONFIG_MODE_FLAG_INDEX] == 1
     except Exception:
         return False
-
-
-def _clear_double_reset_marker():
-    try:
-        microcontroller.nvm[DOUBLE_RESET_MARKER_INDEX] = 0
-    except Exception:
-        pass
 
 
 def _resolve_pin(name):
@@ -49,10 +38,6 @@ serial_console = SerialConsole(device_manager, wifi_manager, mqtt_manager)
 if _in_config_mode():
     wifi_manager.start_ap(system_cfg["ap_ssid"], system_cfg["ap_password"], system_cfg["ap_ip"])
 else:
-    # Short settle window: a reset during this delay is caught by boot.py on
-    # the next boot as a double-tap and routes into config mode instead.
-    time.sleep(BOOT_SETTLE_SECONDS)
-    _clear_double_reset_marker()
     if not wifi_manager.connect_known():
         wifi_manager.start_ap(
             system_cfg["ap_ssid"], system_cfg["ap_password"], system_cfg["ap_ip"]
