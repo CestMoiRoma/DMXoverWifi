@@ -12,23 +12,36 @@ was last put in config mode.
 Usage:
     python tools/deploy.py [TARGET]
 
-TARGET is the mount point of the CIRCUITPY drive (default: E:\\ on
-Windows).
+If TARGET is omitted, the script asks where the CIRCUITPY drive is
+mounted.
 """
 import shutil
 import sys
 from pathlib import Path
 
-DEFAULT_TARGET = "E:\\"
 ITEMS = ("boot.py", "code.py", "src", "www")
 
 
+def prompt_target():
+    if sys.platform == "win32":
+        hint = "e.g. E:\\ or L:\\"
+    elif sys.platform == "darwin":
+        hint = "e.g. /Volumes/CIRCUITPY"
+    else:
+        hint = "e.g. /media/$USER/CIRCUITPY or /run/media/$USER/CIRCUITPY"
+    answer = input("Path to the CIRCUITPY drive (%s): " % hint).strip()
+    if not answer:
+        print("No target provided.", file=sys.stderr)
+        sys.exit(1)
+    return answer
+
+
 def main():
-    target = Path(sys.argv[1] if len(sys.argv) > 1 else DEFAULT_TARGET)
+    target = Path(sys.argv[1] if len(sys.argv) > 1 else prompt_target())
     repo_root = Path(__file__).resolve().parent.parent
 
     if not target.exists():
-        print(f"Target {target} not found.", file=sys.stderr)
+        print("Target %s not found." % target, file=sys.stderr)
         sys.exit(1)
 
     test_file = target / ".deploy_write_test"
@@ -36,7 +49,7 @@ def main():
         test_file.write_text("test")
         test_file.unlink()
     except OSError as e:
-        print(f"{target} is read-only right now: {e}", file=sys.stderr)
+        print("%s is read-only right now: %s" % (target, e), file=sys.stderr)
         print(
             "Put the board in config mode first (double-tap reset) and retry.",
             file=sys.stderr,
@@ -47,9 +60,9 @@ def main():
         src = repo_root / item
         dst = target / item
         if not src.exists():
-            print(f"Skipping {item} (not found in repo)")
+            print("Skipping %s (not found in repo)" % item)
             continue
-        print(f"Syncing {item} ...")
+        print("Syncing %s ..." % item)
         if src.is_dir():
             # Wipe destination first: copytree(dirs_exist_ok=True) merges,
             # but we want a clean overwrite so removed files don't linger.
