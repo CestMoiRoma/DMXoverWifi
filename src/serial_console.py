@@ -20,8 +20,10 @@ HELP_LINES = (
     "Set-System wifi-list                              - saved + visible networks",
     "Set-System mqtt-enable broker=<ip> user=<u> passwd=<p> [port=<n>] - same as Add-mqtt",
     "Set-System mqtt-disable                           - disable mqtt",
-    "Set-System unlock-write                           - make filesystem PC-writable until"
-    " reboot (recovery fallback; CircuitPython loses write access until next reboot)",
+    "Set-System unlock-write                           - live remount: PC-writable until"
+    " next reboot (host must eject the drive first for the change to be visible)",
+    "Set-System reboot-config                          - arm config mode + reset (PC gets"
+    " write access across reboots; used by tools/deploy.py auto-unlock)",
     "Set-device add name=<name>                        - add a device",
     "Set-device add-channel device=<name> name=<ch> channel=<offset> mode=<slider|bool>",
     "Set-device del-channel name=<ch> [device=<name>]  - remove a channel",
@@ -75,6 +77,7 @@ class SerialConsole:
             "mqtt-enable": self._sys_mqtt_enable,
             "mqtt-disable": self._sys_mqtt_disable,
             "unlock-write": self._sys_unlock_write,
+            "reboot-config": self._sys_reboot_config,
             "mesh": self._sys_mesh,
         }
         self._set_device_subs = {
@@ -330,6 +333,15 @@ class SerialConsole:
             "filesystem is now PC-writable; CircuitPython can no longer save config "
             "until the next reboot"
         )
+
+    def _sys_reboot_config(self, args):
+        # Arms boot.py's double-reset marker so the next boot enters config
+        # mode (host-writable filesystem). More reliable than a live remount
+        # because the whole USB stack re-enumerates cleanly through boot.py.
+        self._write("OK entering config mode via reset")
+        microcontroller.nvm[0] = 0x42  # DOUBLE_RESET_MAGIC in boot.py
+        microcontroller.reset()
+        return []
 
     def _sys_mesh(self, args):
         # WIP: stored only, no behavior yet (no parent/child radio logic).
