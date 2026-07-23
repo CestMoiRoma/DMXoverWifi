@@ -17,3 +17,6 @@ data/*.json
 
 __pycache__/
 *.pyc
+
+# Windows Recycle Bin metadata on this removable drive
+$RECYCLE.BIN/
