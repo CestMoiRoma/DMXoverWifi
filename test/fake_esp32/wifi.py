@@ -34,6 +34,7 @@ class Radio:
         self.scanning = False
         self.connect_calls = []
         self.ap_ipv4_config = None
+        self.sta_ipv4_config = None
         self.stop_station_calls = 0
 
     # -- test setup --
@@ -75,6 +76,15 @@ class Radio:
     def set_ipv4_address_ap(self, ipv4=None, netmask=None, gateway=None):
         self.ap_ipv4_config = (str(ipv4), str(netmask), str(gateway))
         self.ipv4_address_ap = str(ipv4)
+
+    def set_ipv4_address(self, ipv4=None, netmask=None, gateway=None, ipv4_dns=None):
+        self.sta_ipv4_config = {
+            "ipv4": str(ipv4),
+            "netmask": str(netmask),
+            "gateway": str(gateway),
+            "dns": str(ipv4_dns) if ipv4_dns is not None else None,
+        }
+        self.ipv4_address = str(ipv4)
 
     def start_scanning_networks(self):
         self.scanning = True

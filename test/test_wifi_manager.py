@@ -1,5 +1,12 @@
-"""Saved-network database, priority ordering and the access-point fallback."""
+"""Saved-network database, priority ordering, static IP and the AP fallback."""
+from src import settings_store
 from src.wifi_manager import WifiManager
+
+
+def set_static(**overrides):
+    cfg = dict(settings_store.DEFAULTS["system.json"])
+    cfg.update(overrides)
+    settings_store.save("system.json", cfg)
 
 
 def test_networks_start_empty(wifi_manager):
@@ -101,6 +108,83 @@ def test_a_bad_static_address_does_not_stop_the_hotspot(wifi_manager, radio):
 
     assert wifi_manager.mode == "ap"
     assert radio.ap_active is True
+
+
+# -- static IP -------------------------------------------------------------
+
+
+def test_dhcp_is_the_default_and_leaves_the_address_alone(wifi_manager, radio):
+    wifi_manager.try_connect("HomeNet", "home-secret")
+
+    assert radio.sta_ipv4_config is None
+
+
+def test_a_static_address_is_applied_after_joining(wifi_manager, radio):
+    set_static(
+        sta_ip_mode="static",
+        sta_static_ip="192.168.1.50",
+        sta_static_netmask="255.255.255.0",
+        sta_static_gateway="192.168.1.1",
+        sta_static_dns="9.9.9.9",
+    )
+
+    wifi_manager.try_connect("HomeNet", "home-secret")
+
+    assert radio.sta_ipv4_config == {
+        "ipv4": "192.168.1.50",
+        "netmask": "255.255.255.0",
+        "gateway": "192.168.1.1",
+        "dns": "9.9.9.9",
+    }
+    assert wifi_manager.status()["ip"] == "192.168.1.50"
+
+
+def test_a_static_address_without_a_dns_server_is_still_applied(wifi_manager, radio):
+    set_static(
+        sta_ip_mode="static",
+        sta_static_ip="192.168.1.50",
+        sta_static_gateway="192.168.1.1",
+        sta_static_dns="",
+    )
+
+    wifi_manager.try_connect("HomeNet", "home-secret")
+
+    assert radio.sta_ipv4_config["dns"] is None
+
+
+def test_static_mode_missing_an_address_or_gateway_stays_on_dhcp(wifi_manager, radio):
+    set_static(sta_ip_mode="static", sta_static_ip="192.168.1.50", sta_static_gateway="")
+
+    wifi_manager.try_connect("HomeNet", "home-secret")
+
+    assert radio.sta_ipv4_config is None
+
+
+def test_an_unparseable_static_address_falls_back_to_dhcp(wifi_manager, radio):
+    set_static(
+        sta_ip_mode="static",
+        sta_static_ip="not.an.address",
+        sta_static_gateway="192.168.1.1",
+    )
+
+    assert wifi_manager.try_connect("HomeNet", "home-secret") is True
+    assert radio.sta_ipv4_config is None, "a typo must not cost you the network"
+
+
+def test_static_settings_are_ignored_on_the_hotspot(wifi_manager, radio):
+    set_static(
+        sta_ip_mode="static",
+        sta_static_ip="192.168.1.50",
+        sta_static_gateway="192.168.1.1",
+    )
+
+    wifi_manager.start_ap("ESP-DMX", "DMX4ALL1", "1.1.1.1")
+
+    assert radio.sta_ipv4_config is None
+    assert radio.ipv4_address_ap == "1.1.1.1"
+
+
+# -- status ----------------------------------------------------------------
 
 
 def test_status_in_station_mode(wifi_manager, radio):
