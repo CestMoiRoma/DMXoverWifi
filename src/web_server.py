@@ -1,4 +1,7 @@
-from adafruit_httpserver import DELETE, GET, POST, PUT, FileResponse, JSONResponse, Server
+from adafruit_httpserver import (
+    DELETE, GET, POST, PUT,
+    FileResponse, JSONResponse, Response, Server,
+)
 
 from . import settings_store
 from .version import VERSION
@@ -42,6 +45,7 @@ class WebServer:
         s.route("/api/mesh", GET)(self._get_mesh)
         s.route("/api/mesh", POST)(self._set_mesh)
         s.route("/api/info", GET)(self._get_info)
+        s.route("/api/export-env", GET)(self._export_env)
 
     def start(self, port=80):
         self.server.start("0.0.0.0", port=port)
@@ -157,3 +161,77 @@ class WebServer:
 
     def _get_info(self, request):
         return JSONResponse(request, _INFO)
+
+    # -- export current config as .env text (downloadable) --
+
+    def _export_env(self, request):
+        body = _build_env_text()
+        headers = {"Content-Disposition": "attachment; filename=config.env"}
+        return Response(request, body, content_type="text/plain", headers=headers)
+
+
+def _bool_env(value):
+    return "true" if value else "false"
+
+
+def _build_env_text():
+    lines = []
+    lines.append("# Exported from the running board - drop next to tools/deploy.py as .env")
+    lines.append("")
+
+    wifi = settings_store.load("wifi_networks.json")
+    if wifi:
+        lines.append("# --- WiFi networks ---")
+        for i, net in enumerate(wifi, 1):
+            lines.append("WIFI_%d_SSID=%s" % (i, net.get("ssid", "")))
+            lines.append("WIFI_%d_PASSWORD=%s" % (i, net.get("password", "")))
+            lines.append("WIFI_%d_PRIORITY=%d" % (i, int(net.get("priority", 0) or 0)))
+            lines.append("")
+
+    mqtt = settings_store.load("mqtt.json")
+    lines.append("# --- MQTT ---")
+    lines.append("MQTT_ENABLED=%s" % _bool_env(mqtt.get("enabled")))
+    lines.append("MQTT_HOST=%s" % mqtt.get("host", ""))
+    lines.append("MQTT_PORT=%d" % int(mqtt.get("port", 1883) or 1883))
+    lines.append("MQTT_USERNAME=%s" % mqtt.get("username", ""))
+    lines.append("MQTT_PASSWORD=%s" % mqtt.get("password", ""))
+    lines.append("MQTT_BASE_TOPIC=%s" % mqtt.get("base_topic", ""))
+    lines.append("MQTT_DISCOVERY_PREFIX=%s" % mqtt.get("discovery_prefix", ""))
+    lines.append("")
+
+    system = settings_store.load("system.json")
+    lines.append("# --- System / DMX / hotspot / static IP ---")
+    lines.append("DMX_TX_PIN=%s" % system.get("dmx_tx_pin", ""))
+    lines.append("DMX_DIR_PIN_ENABLED=%s" % _bool_env(system.get("dmx_dir_pin_enabled")))
+    lines.append("DMX_DIR_PIN=%s" % system.get("dmx_dir_pin", ""))
+    lines.append("HOSTNAME=%s" % system.get("hostname", ""))
+    lines.append("AP_SSID=%s" % system.get("ap_ssid", ""))
+    lines.append("AP_PASSWORD=%s" % system.get("ap_password", ""))
+    lines.append("AP_IP=%s" % system.get("ap_ip", ""))
+    lines.append("STA_IP_MODE=%s" % system.get("sta_ip_mode", "dhcp"))
+    lines.append("STA_STATIC_IP=%s" % system.get("sta_static_ip", ""))
+    lines.append("STA_STATIC_NETMASK=%s" % system.get("sta_static_netmask", ""))
+    lines.append("STA_STATIC_GATEWAY=%s" % system.get("sta_static_gateway", ""))
+    lines.append("STA_STATIC_DNS=%s" % system.get("sta_static_dns", ""))
+    lines.append("")
+
+    mesh = settings_store.load("mesh.json")
+    lines.append("# --- Parent/Child mesh (WIP) ---")
+    lines.append("MESH_ROLE=%s" % mesh.get("role", "none"))
+    lines.append("MESH_SSID=%s" % mesh.get("ssid", ""))
+    lines.append("MESH_PASSWORD=%s" % mesh.get("password", ""))
+    lines.append("")
+
+    devices = settings_store.load("devices.json")
+    if devices:
+        lines.append("# --- Devices ---")
+        for i, dev in enumerate(devices, 1):
+            lines.append("DEVICE_%d_NAME=%s" % (i, dev.get("name", "")))
+            lines.append("DEVICE_%d_START_CHANNEL=%d" % (i, int(dev.get("start_channel", 1))))
+            for j, ch in enumerate(dev.get("channels", []), 1):
+                lines.append("DEVICE_%d_CHANNEL_%d_OFFSET=%d" % (i, j, int(ch.get("offset", j))))
+                lines.append("DEVICE_%d_CHANNEL_%d_NAME=%s" % (i, j, ch.get("name", "")))
+                lines.append("DEVICE_%d_CHANNEL_%d_TYPE=%s" % (i, j, ch.get("type", "slider")))
+            lines.append("")
+
+    return "\n".join(lines) + "\n"
