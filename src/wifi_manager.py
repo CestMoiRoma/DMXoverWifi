@@ -51,6 +51,9 @@ class WifiManager:
             wifi.radio.connect(ssid, password or None, timeout=timeout)
             if wifi.radio.ipv4_address:
                 self.mode = "sta"
+                if wifi.radio.ap_active:
+                    wifi.radio.stop_ap()
+                    self.ap_ssid = None
                 return True
         except Exception:
             pass

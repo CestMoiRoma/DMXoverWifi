@@ -17,11 +17,18 @@ DEFAULTS = {
     },
     "system.json": {
         "dmx_tx_pin": "D4",
+        "dmx_dir_pin_enabled": False,
         "dmx_dir_pin": "D3",
         "hostname": "ESP-DMX",
         "ap_ssid": "ESP-DMX",
         "ap_password": "DMX4ALL1",
         "ap_ip": "1.1.1.1",
+    },
+    "mesh.json": {
+        # WIP: not acted on yet, only stored. See mesh_manager.py.
+        "role": "none",  # "none" | "parent" | "child"
+        "ssid": "",
+        "password": "",
     },
 }
 

@@ -84,3 +84,5 @@ button {
 button.secondary { background: var(--card); color: var(--fg); }
 
 .list-item { display: flex; justify-content: space-between; align-items: center; padding: 0.4rem 0; border-bottom: 1px solid var(--border); }
+
+.hint { font-weight: normal; font-size: 0.85em; opacity: 0.7; }

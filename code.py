@@ -37,9 +37,10 @@ def _resolve_pin(name):
 
 
 system_cfg = settings_store.load("system.json")
-dmx_driver = DmxDriver(
-    _resolve_pin(system_cfg["dmx_tx_pin"]), _resolve_pin(system_cfg["dmx_dir_pin"])
-)
+_dir_pin = None
+if system_cfg.get("dmx_dir_pin_enabled"):
+    _dir_pin = _resolve_pin(system_cfg["dmx_dir_pin"])
+dmx_driver = DmxDriver(_resolve_pin(system_cfg["dmx_tx_pin"]), _dir_pin)
 device_manager = DeviceManager(dmx_driver)
 wifi_manager = WifiManager()
 mqtt_manager = MqttManager(device_manager)

@@ -28,6 +28,8 @@ class WebServer:
         s.route("/api/mqtt", POST)(self._set_mqtt)
         s.route("/api/system", GET)(self._get_system)
         s.route("/api/system", POST)(self._set_system)
+        s.route("/api/mesh", GET)(self._get_mesh)
+        s.route("/api/mesh", POST)(self._set_mesh)
 
     def start(self, port=80):
         self.server.start("0.0.0.0", port=port)
@@ -122,4 +124,16 @@ class WebServer:
         cfg = settings_store.load("system.json")
         cfg.update(data)
         settings_store.save("system.json", cfg)
+        return JSONResponse(request, cfg)
+
+    # -- mesh (WIP, stored only) --
+
+    def _get_mesh(self, request):
+        return JSONResponse(request, settings_store.load("mesh.json"))
+
+    def _set_mesh(self, request):
+        data = request.json()
+        cfg = settings_store.load("mesh.json")
+        cfg.update(data)
+        settings_store.save("mesh.json", cfg)
         return JSONResponse(request, cfg)

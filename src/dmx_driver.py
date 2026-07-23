@@ -10,12 +10,17 @@ FRAME_INTERVAL = 0.025
 
 
 class DmxDriver:
-    def __init__(self, tx_pin, dir_pin):
+    def __init__(self, tx_pin, dir_pin=None):
+        # dir_pin is optional: some MAX485 boards tie DE+RE straight to VCC
+        # (always transmit-enabled) instead of a GPIO, in which case there's
+        # nothing for the microcontroller to drive.
         self.buffer = bytearray(DMX_CHANNELS + 1)
         self._tx_pin = tx_pin
-        self._direction = digitalio.DigitalInOut(dir_pin)
-        self._direction.direction = digitalio.Direction.OUTPUT
-        self._direction.value = True
+        self._direction = None
+        if dir_pin is not None:
+            self._direction = digitalio.DigitalInOut(dir_pin)
+            self._direction.direction = digitalio.Direction.OUTPUT
+            self._direction.value = True
         self._uart = None
         self._last_send = 0.0
         self._open_data_uart()

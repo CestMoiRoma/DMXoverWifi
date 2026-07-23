@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -10,14 +10,27 @@
 <header>
   <h1>DMX over WiFi</h1>
   <nav>
-    <button data-view="index" class="nav-btn active">Index</button>
+    <button data-view="home" class="nav-btn active">Home</button>
+    <button data-view="devices" class="nav-btn">Device Manager</button>
     <button data-view="settings" class="nav-btn">Settings</button>
-    <button data-view="devices" class="nav-btn">Device manager</button>
   </nav>
 </header>
 
 <main>
-  <section id="view-index" class="view active"></section>
+  <section id="view-home" class="view active"></section>
+
+  <section id="view-devices" class="view">
+    <h2>Devices</h2>
+    <div id="device-list"></div>
+    <h3>New device</h3>
+    <form id="device-form">
+      <input type="text" name="name" placeholder="Device name" required>
+      <input type="number" name="start_channel" placeholder="Start channel" min="1" max="512" required>
+      <div id="channel-rows"></div>
+      <button type="button" id="add-channel-row">+ channel</button>
+      <button type="submit">Create</button>
+    </form>
+  </section>
 
   <section id="view-settings" class="view">
     <h2>WiFi</h2>
@@ -25,46 +38,49 @@
     <form id="wifi-form">
       <input type="text" name="ssid" placeholder="SSID" required list="wifi-scan-results">
       <datalist id="wifi-scan-results"></datalist>
-      <input type="password" name="password" placeholder="Mot de passe">
-      <input type="number" name="priority" placeholder="Priorité" value="0">
-      <button type="submit">Ajouter</button>
-      <button type="button" id="wifi-scan-btn">Scanner</button>
+      <input type="password" name="password" placeholder="Password">
+      <input type="number" name="priority" placeholder="Priority" value="0">
+      <button type="submit">Add</button>
+      <button type="button" id="wifi-scan-btn">Scan</button>
     </form>
 
     <h2>MQTT</h2>
     <form id="mqtt-form">
-      <label><input type="checkbox" name="enabled"> Activer</label>
+      <label><input type="checkbox" name="enabled"> Enabled</label>
       <input type="text" name="host" placeholder="Broker host">
       <input type="number" name="port" placeholder="Port" value="1883">
-      <input type="text" name="username" placeholder="Utilisateur">
-      <input type="password" name="password" placeholder="Mot de passe">
+      <input type="text" name="username" placeholder="Username">
+      <input type="password" name="password" placeholder="Password">
       <input type="text" name="base_topic" placeholder="Base topic">
       <input type="text" name="discovery_prefix" placeholder="Discovery prefix">
-      <button type="submit">Enregistrer</button>
+      <button type="submit">Save</button>
     </form>
 
-    <h2>Système</h2>
+    <h2>System</h2>
     <form id="system-form">
-      <label>Pin TX DMX <input type="text" name="dmx_tx_pin"></label>
-      <label>Pin direction DE/RE <input type="text" name="dmx_dir_pin"></label>
+      <label>DMX TX pin <input type="text" name="dmx_tx_pin"></label>
+      <label><input type="checkbox" name="dmx_dir_pin_enabled"> Enable DE/RE direction pin
+        <span class="hint">(leave off if DE+RE are wired straight to VCC)</span></label>
+      <label>DE/RE pin <input type="text" name="dmx_dir_pin"></label>
       <label>Hostname <input type="text" name="hostname"></label>
-      <label>SSID hotspot config <input type="text" name="ap_ssid"></label>
-      <label>Mot de passe hotspot <input type="password" name="ap_password"></label>
-      <label>IP hotspot <input type="text" name="ap_ip"></label>
-      <button type="submit">Enregistrer</button>
+      <label>Config hotspot SSID <input type="text" name="ap_ssid"></label>
+      <label>Config hotspot password <input type="password" name="ap_password"></label>
+      <label>Config hotspot IP <input type="text" name="ap_ip"></label>
+      <button type="submit">Save</button>
     </form>
-  </section>
 
-  <section id="view-devices" class="view">
-    <h2>Devices</h2>
-    <div id="device-list"></div>
-    <h3>Nouveau device</h3>
-    <form id="device-form">
-      <input type="text" name="name" placeholder="Nom du device" required>
-      <input type="number" name="start_channel" placeholder="Channel de départ" min="1" max="512" required>
-      <div id="channel-rows"></div>
-      <button type="button" id="add-channel-row">+ channel</button>
-      <button type="submit">Créer</button>
+    <h2>Parent/Child mode <span class="hint">(WIP - not active yet)</span></h2>
+    <form id="mesh-form">
+      <label>Role
+        <select name="role">
+          <option value="none">None</option>
+          <option value="parent">Parent</option>
+          <option value="child">Child</option>
+        </select>
+      </label>
+      <input type="text" name="ssid" placeholder="Mesh SSID (hidden)">
+      <input type="password" name="password" placeholder="Mesh password">
+      <button type="submit">Save</button>
     </form>
   </section>
 </main>

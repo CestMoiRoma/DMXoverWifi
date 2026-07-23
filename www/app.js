@@ -28,7 +28,7 @@ function switchView(name) {
   document.querySelectorAll(".nav-btn").forEach((b) => b.classList.remove("active"));
   document.getElementById("view-" + name).classList.add("active");
   document.querySelector('.nav-btn[data-view="' + name + '"]').classList.add("active");
-  if (name === "index") renderIndex();
+  if (name === "home") renderHome();
   if (name === "settings") renderSettings();
   if (name === "devices") renderDevices();
 }
@@ -37,14 +37,14 @@ document.querySelectorAll(".nav-btn").forEach((btn) => {
   btn.addEventListener("click", () => switchView(btn.dataset.view));
 });
 
-// ---- index view: live channel control ----
+// ---- home view: live channel control ----
 
-async function renderIndex() {
-  const container = document.getElementById("view-index");
+async function renderHome() {
+  const container = document.getElementById("view-home");
   container.innerHTML = "";
   const devices = await api("/api/devices");
   if (devices.length === 0) {
-    container.appendChild(el("p", {}, ["Aucun device. Ajoute-en un depuis Device manager."]));
+    container.appendChild(el("p", {}, ["No devices yet. Add one from Device Manager."]));
     return;
   }
   devices.forEach((device) => {
@@ -102,11 +102,18 @@ async function renderSettings() {
   const system = await api("/api/system");
   const systemForm = document.getElementById("system-form");
   systemForm.dmx_tx_pin.value = system.dmx_tx_pin || "";
+  systemForm.dmx_dir_pin_enabled.checked = !!system.dmx_dir_pin_enabled;
   systemForm.dmx_dir_pin.value = system.dmx_dir_pin || "";
   systemForm.hostname.value = system.hostname || "";
   systemForm.ap_ssid.value = system.ap_ssid || "";
   systemForm.ap_password.value = system.ap_password || "";
   systemForm.ap_ip.value = system.ap_ip || "";
+
+  const mesh = await api("/api/mesh");
+  const meshForm = document.getElementById("mesh-form");
+  meshForm.role.value = mesh.role || "none";
+  meshForm.ssid.value = mesh.ssid || "";
+  meshForm.password.value = mesh.password || "";
 }
 
 async function renderWifiList() {
@@ -115,9 +122,9 @@ async function renderWifiList() {
   list.innerHTML = "";
   networks.forEach((net) => {
     const item = el("div", { class: "list-item" }, [
-      el("span", {}, [net.ssid + " (priorité " + net.priority + ")"]),
+      el("span", {}, [net.ssid + " (priority " + net.priority + ")"]),
     ]);
-    const del = el("button", { class: "secondary" }, ["Supprimer"]);
+    const del = el("button", { class: "secondary" }, ["Remove"]);
     del.addEventListener("click", async () => {
       await api("/api/wifi/" + encodeURIComponent(net.ssid), "DELETE");
       renderWifiList();
@@ -167,11 +174,22 @@ document.getElementById("system-form").addEventListener("submit", async (e) => {
   const form = e.target;
   await api("/api/system", "POST", {
     dmx_tx_pin: form.dmx_tx_pin.value,
+    dmx_dir_pin_enabled: form.dmx_dir_pin_enabled.checked,
     dmx_dir_pin: form.dmx_dir_pin.value,
     hostname: form.hostname.value,
     ap_ssid: form.ap_ssid.value,
     ap_password: form.ap_password.value,
     ap_ip: form.ap_ip.value,
+  });
+});
+
+document.getElementById("mesh-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  await api("/api/mesh", "POST", {
+    role: form.role.value,
+    ssid: form.ssid.value,
+    password: form.password.value,
   });
 });
 
@@ -183,13 +201,13 @@ function addChannelRow(offset) {
   row.appendChild(
     el("input", { type: "number", placeholder: "Offset", value: String(offset), min: "1", class: "ch-offset" })
   );
-  row.appendChild(el("input", { type: "text", placeholder: "Nom", class: "ch-name" }));
+  row.appendChild(el("input", { type: "text", placeholder: "Name", class: "ch-name" }));
   const select = el("select", { class: "ch-type" }, [
     el("option", { value: "slider" }, ["Slider"]),
     el("option", { value: "button" }, ["Button"]),
   ]);
   row.appendChild(select);
-  const removeBtn = el("button", { type: "button", class: "secondary" }, ["Retirer"]);
+  const removeBtn = el("button", { type: "button", class: "secondary" }, ["Remove"]);
   removeBtn.addEventListener("click", () => row.remove());
   row.appendChild(removeBtn);
   rows.appendChild(row);
@@ -236,7 +254,7 @@ async function renderDevices() {
         ])
       );
     });
-    const del = el("button", { class: "secondary" }, ["Supprimer le device"]);
+    const del = el("button", { class: "secondary" }, ["Delete device"]);
     del.addEventListener("click", async () => {
       await api("/api/devices/" + device.id, "DELETE");
       renderDevices();
@@ -246,4 +264,4 @@ async function renderDevices() {
   });
 }
 
-switchView("index");
+switchView("home");

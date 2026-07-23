@@ -9,8 +9,12 @@ from . import settings_store
 HELP_LINES = (
     "Add-Wifi ssid=<ssid> passwd=<password> [priority=<n>]",
     "Add-mqtt broker=<ip> user=<user> passwd=<password> [port=<n>]",
-    "Set-System pin=<pin>                              - MAX485 direction pin (reboot to apply)",
+    "Set-System tx-pin=<pin>                           - MAX485 DI/UART pin (reboot to apply)",
+    "Set-System dir-pin enable=<true|false> [pin=<pin>] - MAX485 DE/RE pin, disabled by default"
+    " (tie DE+RE to VCC and leave disabled if that's your wiring) (reboot to apply)",
     "Set-System hotspot name=<name> passwd=<password>  - AP ssid/password (reboot to apply)",
+    "Set-System mesh role=<none|parent|child> [ssid=<>] [passwd=<>] - WIP, stored only,"
+    " no effect yet",
     "Set-System wifi-add ssid=<ssid> passwd=<password>[priority=<n>] - same as Add-Wifi",
     "Set-System wifi-del ssid=<ssid>                   - remove a saved network",
     "Set-System wifi-list                              - saved + visible networks",
@@ -22,7 +26,7 @@ HELP_LINES = (
     "Set-device add-channel device=<name> name=<ch> channel=<offset> mode=<slider|bool>",
     "Set-device del-channel name=<ch> [device=<name>]  - remove a channel",
     "Set-device del device=<name>                      - remove a device",
-    "get-status [all|wifi|mqtt|devices]",
+    "get-status [all|wifi|mqtt|devices|mesh]",
     "get-status device name=<name>                     - channels of one device",
     "get-status channel channel=<ch> [device=<name>]   - one channel's value",
     "Help                                               - this message",
@@ -62,7 +66,8 @@ class SerialConsole:
             "reboot": self._cmd_reboot,
         }
         self._set_system_subs = {
-            "pin": self._sys_pin,
+            "tx-pin": self._sys_tx_pin,
+            "dir-pin": self._sys_dir_pin,
             "hotspot": self._sys_hotspot,
             "wifi-add": self._sys_wifi_add,
             "wifi-del": self._sys_wifi_del,
@@ -70,6 +75,7 @@ class SerialConsole:
             "mqtt-enable": self._sys_mqtt_enable,
             "mqtt-disable": self._sys_mqtt_disable,
             "unlock-write": self._sys_unlock_write,
+            "mesh": self._sys_mesh,
         }
         self._set_device_subs = {
             "add": self._dev_add,
@@ -84,6 +90,7 @@ class SerialConsole:
             "devices": self._status_devices,
             "device": self._status_device,
             "channel": self._status_channel,
+            "mesh": self._status_mesh,
         }
 
     # -- I/O --
@@ -257,14 +264,29 @@ class SerialConsole:
 
     # -- Set-System subcommands --
 
-    def _sys_pin(self, args):
-        pin = args.get("pin")
+    def _sys_tx_pin(self, args):
+        pin = args.get("tx-pin") or args.get("pin")
         if not pin:
-            raise ValueError("pin required, e.g. pin=D9")
+            raise ValueError("pin required, e.g. tx-pin=D9")
         cfg = settings_store.load("system.json")
-        cfg["dmx_dir_pin"] = pin
+        cfg["dmx_tx_pin"] = pin
         settings_store.save("system.json", cfg)
-        return "dmx direction pin set to '%s' (reboot to apply)" % pin
+        return "dmx tx pin set to '%s' (reboot to apply)" % pin
+
+    def _sys_dir_pin(self, args):
+        cfg = settings_store.load("system.json")
+        if "enable" in args:
+            cfg["dmx_dir_pin_enabled"] = args["enable"].strip().lower() in (
+                "true",
+                "1",
+                "yes",
+                "on",
+            )
+        if "pin" in args:
+            cfg["dmx_dir_pin"] = args["pin"]
+        settings_store.save("system.json", cfg)
+        state = "enabled" if cfg["dmx_dir_pin_enabled"] else "disabled"
+        return "dir pin %s (pin=%s) (reboot to apply)" % (state, cfg["dmx_dir_pin"])
 
     def _sys_hotspot(self, args):
         cfg = settings_store.load("system.json")
@@ -308,6 +330,21 @@ class SerialConsole:
             "filesystem is now PC-writable; CircuitPython can no longer save config "
             "until the next reboot"
         )
+
+    def _sys_mesh(self, args):
+        # WIP: stored only, no behavior yet (no parent/child radio logic).
+        role = args.get("role")
+        if role and role not in ("none", "parent", "child"):
+            raise ValueError("role must be none, parent or child")
+        cfg = settings_store.load("mesh.json")
+        if role:
+            cfg["role"] = role
+        if "ssid" in args:
+            cfg["ssid"] = args["ssid"]
+        if any(k in args for k in ("passwd", "psswd", "password")):
+            cfg["password"] = _password_arg(args)
+        settings_store.save("mesh.json", cfg)
+        return "mesh role='%s' ssid='%s' (WIP, not active yet)" % (cfg["role"], cfg["ssid"])
 
     # -- Set-device subcommands --
 
@@ -363,9 +400,12 @@ class SerialConsole:
             "mqtt: enabled=%s connected=%s broker=%s" % (m["enabled"], m["connected"], m["broker"])
         )
         system_cfg = settings_store.load("system.json")
+        dir_pin = (
+            system_cfg["dmx_dir_pin"] if system_cfg.get("dmx_dir_pin_enabled") else "disabled"
+        )
         lines.append(
             "system: hostname=%s tx_pin=%s dir_pin=%s"
-            % (system_cfg["hostname"], system_cfg["dmx_tx_pin"], system_cfg["dmx_dir_pin"])
+            % (system_cfg["hostname"], system_cfg["dmx_tx_pin"], dir_pin)
         )
         device_count = len(self.device_manager.devices)
         channel_count = sum(len(d.channels) for d in self.device_manager.devices)
@@ -418,3 +458,7 @@ class SerialConsole:
             % (d.name, c.name, c.offset, c.type, self.device_manager.get_value(d, c))
             for d, c in matches
         ]
+
+    def _status_mesh(self, args):
+        cfg = settings_store.load("mesh.json")
+        return ["mesh (WIP): role=%s ssid=%s" % (cfg["role"], cfg["ssid"])]
