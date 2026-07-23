@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Copy firmware source (boot.py, code.py, src/, www/) onto the board's
-CIRCUITPY drive. Does not touch lib/ (vendored libraries) or data/
-(runtime config) on the target.
+Copy firmware source (boot.py, code.py, src/, www/, lib/) onto the
+board's CIRCUITPY drive. Does not touch data/ (runtime config) on the
+target.
 
 The board's filesystem must be PC-writable to do this - either the
 board is in config mode (double-tap reset, or "Set-System unlock-write"
@@ -19,7 +19,7 @@ import shutil
 import sys
 from pathlib import Path
 
-ITEMS = ("boot.py", "code.py", "src", "www")
+ITEMS = ("boot.py", "code.py", "src", "www", "lib")
 
 
 def prompt_target():
