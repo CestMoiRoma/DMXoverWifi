@@ -131,6 +131,14 @@ async function renderSettings() {
   systemForm.ap_password.value = system.ap_password || "";
   systemForm.ap_ip.value = system.ap_ip || "";
 
+  const staticForm = document.getElementById("staticip-form");
+  staticForm.sta_ip_mode.value = system.sta_ip_mode || "dhcp";
+  staticForm.sta_static_ip.value = system.sta_static_ip || "";
+  staticForm.sta_static_netmask.value = system.sta_static_netmask || "";
+  staticForm.sta_static_gateway.value = system.sta_static_gateway || "";
+  staticForm.sta_static_dns.value = system.sta_static_dns || "";
+  updateStaticIpFields();
+
   const mesh = await api("/api/mesh");
   const meshForm = document.getElementById("mesh-form");
   meshForm.role.value = mesh.role || "none";
@@ -202,6 +210,31 @@ document.getElementById("system-form").addEventListener("submit", async (e) => {
     ap_ssid: form.ap_ssid.value,
     ap_password: form.ap_password.value,
     ap_ip: form.ap_ip.value,
+  });
+});
+
+function updateStaticIpFields() {
+  const form = document.getElementById("staticip-form");
+  const dhcp = form.sta_ip_mode.value === "dhcp";
+  ["sta_static_ip", "sta_static_netmask", "sta_static_gateway", "sta_static_dns"].forEach((n) => {
+    form[n].disabled = dhcp;
+  });
+}
+
+document.getElementById("staticip-form").sta_ip_mode.addEventListener(
+  "change",
+  updateStaticIpFields
+);
+
+document.getElementById("staticip-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  await api("/api/system", "POST", {
+    sta_ip_mode: form.sta_ip_mode.value,
+    sta_static_ip: form.sta_static_ip.value,
+    sta_static_netmask: form.sta_static_netmask.value,
+    sta_static_gateway: form.sta_static_gateway.value,
+    sta_static_dns: form.sta_static_dns.value,
   });
 });
 

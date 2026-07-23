@@ -143,6 +143,38 @@
     </div>
 
     <div class="section">
+      <h2>Static IP <span class="hint">(when connected to a known network)</span></h2>
+      <form id="staticip-form" class="form-stacked">
+        <div class="field">
+          <label for="staticip-mode">Mode</label>
+          <select id="staticip-mode" name="sta_ip_mode">
+            <option value="dhcp">DHCP (automatic)</option>
+            <option value="static">Static</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="staticip-ip">IP address</label>
+          <input type="text" id="staticip-ip" name="sta_static_ip" placeholder="192.168.1.100">
+        </div>
+        <div class="field">
+          <label for="staticip-netmask">Netmask</label>
+          <input type="text" id="staticip-netmask" name="sta_static_netmask" placeholder="255.255.255.0">
+        </div>
+        <div class="field">
+          <label for="staticip-gateway">Gateway</label>
+          <input type="text" id="staticip-gateway" name="sta_static_gateway" placeholder="192.168.1.1">
+        </div>
+        <div class="field">
+          <label for="staticip-dns">DNS</label>
+          <input type="text" id="staticip-dns" name="sta_static_dns" placeholder="1.1.1.1">
+        </div>
+        <div class="form-actions">
+          <button type="submit">Save</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="section">
       <h2>Parent/Child mode <span class="hint">(WIP - not active yet)</span></h2>
       <form id="mesh-form" class="form-stacked">
         <div class="field">

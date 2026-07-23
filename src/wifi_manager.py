@@ -54,10 +54,34 @@ class WifiManager:
                 if wifi.radio.ap_active:
                     wifi.radio.stop_ap()
                     self.ap_ssid = None
+                self._apply_static_ip()
                 return True
         except Exception:
             pass
         return False
+
+    def _apply_static_ip(self):
+        cfg = settings_store.load("system.json")
+        if cfg.get("sta_ip_mode") != "static":
+            return
+        ip = cfg.get("sta_static_ip")
+        gateway = cfg.get("sta_static_gateway")
+        if not (ip and gateway):
+            return
+        netmask = cfg.get("sta_static_netmask") or DEFAULT_AP_NETMASK
+        dns = cfg.get("sta_static_dns")
+        try:
+            kwargs = {
+                "ipv4": ipaddress.IPv4Address(ip),
+                "netmask": ipaddress.IPv4Address(netmask),
+                "gateway": ipaddress.IPv4Address(gateway),
+            }
+            if dns:
+                kwargs["ipv4_dns"] = ipaddress.IPv4Address(dns)
+            wifi.radio.set_ipv4_address(**kwargs)
+        except Exception:
+            # Bad values or the port doesn't support it - stick with DHCP.
+            pass
 
     def start_ap(self, ssid, password, ip):
         wifi.radio.stop_station()

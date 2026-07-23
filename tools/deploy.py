@@ -21,6 +21,7 @@ Usage:
 If TARGET or --port are omitted, you'll be prompted.
 """
 import argparse
+import json
 import shutil
 import subprocess
 import sys
@@ -143,6 +144,69 @@ def send_line(port, line):
         ser.close()
 
 
+def parse_env(path):
+    """Parse a .env-style file into a flat {KEY: value} dict."""
+    env = {}
+    for raw in path.read_text().splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        env[key.strip()] = value.strip().strip('"').strip("'")
+    return env
+
+
+def wifi_defaults_from_env(env):
+    """Extract WIFI_N_SSID/PASSWORD/PRIORITY groups into wifi_networks entries."""
+    groups = {}
+    for key, value in env.items():
+        if not key.startswith("WIFI_"):
+            continue
+        parts = key.split("_", 2)
+        if len(parts) != 3:
+            continue
+        n, field = parts[1], parts[2].lower()
+        groups.setdefault(n, {})[field] = value
+    out = []
+    for n in sorted(groups.keys()):
+        g = groups[n]
+        if not g.get("ssid"):
+            continue
+        try:
+            priority = int(g.get("priority", 0) or 0)
+        except ValueError:
+            priority = 0
+        out.append({
+            "ssid": g["ssid"],
+            "password": g.get("password", ""),
+            "priority": priority,
+        })
+    return out
+
+
+def merge_wifi_defaults(target, entries):
+    """Merge entries into target/data/wifi_networks.json (skip existing SSIDs)."""
+    data_dir = target / "data"
+    data_dir.mkdir(exist_ok=True)
+    fp = data_dir / "wifi_networks.json"
+    existing = []
+    if fp.exists():
+        try:
+            existing = json.loads(fp.read_text())
+        except (OSError, ValueError):
+            existing = []
+    seen = {n.get("ssid") for n in existing if isinstance(n, dict)}
+    added = 0
+    for entry in entries:
+        if entry["ssid"] in seen:
+            continue
+        existing.append(entry)
+        seen.add(entry["ssid"])
+        added += 1
+    fp.write_text(json.dumps(existing))
+    return added
+
+
 def wait_for_writable(target, timeout=25):
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -215,6 +279,15 @@ def main():
     if wiki_src.exists():
         print("Syncing WIKI.md -> www/wiki.md ...")
         shutil.copy2(wiki_src, target / "www" / "wiki.md")
+
+    env_path = repo_root / ".env"
+    if env_path.exists():
+        entries = wifi_defaults_from_env(parse_env(env_path))
+        if entries:
+            added = merge_wifi_defaults(target, entries)
+            print(
+                "Merged %d WiFi entries from .env (existing SSIDs left alone)" % added
+            )
 
     if unlocked_us and not args.no_reboot:
         print("Rebooting board back to normal mode...")

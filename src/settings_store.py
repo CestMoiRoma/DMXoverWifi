@@ -23,6 +23,11 @@ DEFAULTS = {
         "ap_ssid": "ESP-DMX",
         "ap_password": "DMX4ALL1",
         "ap_ip": "1.1.1.1",
+        "sta_ip_mode": "dhcp",  # "dhcp" | "static"
+        "sta_static_ip": "",
+        "sta_static_netmask": "255.255.255.0",
+        "sta_static_gateway": "",
+        "sta_static_dns": "1.1.1.1",
     },
     "mesh.json": {
         # WIP: not acted on yet, only stored. See mesh_manager.py.

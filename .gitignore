@@ -12,6 +12,9 @@ System Volume Information/
 data/*.json
 !data/.gitkeep
 
+# Local deploy-time defaults (wifi passwords etc), see .env.example
+.env
+
 # Pre-existing SD card mount point, unrelated to this project
 /sd/
 
