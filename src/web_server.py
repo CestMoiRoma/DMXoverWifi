@@ -176,7 +176,7 @@ def _bool_env(value):
 
 def _build_env_text():
     lines = []
-    lines.append("# Exported from the running board - drop next to tools/deploy.py as .env")
+    lines.append("# Exported from the running board. Drop next to tools/deploy.py as .env")
     lines.append("")
 
     wifi = settings_store.load("wifi_networks.json")

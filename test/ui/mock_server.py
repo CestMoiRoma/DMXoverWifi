@@ -132,6 +132,85 @@ class MockHandler(SimpleHTTPRequestHandler):
                 return device
         return None
 
+    def _env_download(self):
+        """Mirror of the firmware's /api/export-env, down to the headers.
+
+        Same key names and the same ordering as src/web_server.py, so a browser
+        test that checks the download here is checking the real contract.
+        """
+        state = self.state
+        lines = ["# Exported from the running board. Drop next to tools/deploy.py as .env", ""]
+
+        if state["wifi"]:
+            lines.append("# --- WiFi networks ---")
+            for i, net in enumerate(state["wifi"], 1):
+                lines.append("WIFI_%d_SSID=%s" % (i, net["ssid"]))
+                lines.append("WIFI_%d_PASSWORD=%s" % (i, net.get("password", "")))
+                lines.append("WIFI_%d_PRIORITY=%d" % (i, net.get("priority", 0)))
+                lines.append("")
+
+        mqtt = state["mqtt"]
+        lines.append("# --- MQTT ---")
+        lines.append("MQTT_ENABLED=%s" % ("true" if mqtt["enabled"] else "false"))
+        for key, env_key in (
+            ("host", "MQTT_HOST"),
+            ("port", "MQTT_PORT"),
+            ("username", "MQTT_USERNAME"),
+            ("password", "MQTT_PASSWORD"),
+            ("base_topic", "MQTT_BASE_TOPIC"),
+            ("discovery_prefix", "MQTT_DISCOVERY_PREFIX"),
+        ):
+            lines.append("%s=%s" % (env_key, mqtt.get(key, "")))
+        lines.append("")
+
+        system = state["system"]
+        lines.append("# --- System / DMX / hotspot / static IP ---")
+        for env_key, key in (
+            ("DMX_TX_PIN", "dmx_tx_pin"),
+            ("DMX_DIR_PIN_ENABLED", "dmx_dir_pin_enabled"),
+            ("DMX_DIR_PIN", "dmx_dir_pin"),
+            ("HOSTNAME", "hostname"),
+            ("AP_SSID", "ap_ssid"),
+            ("AP_PASSWORD", "ap_password"),
+            ("AP_IP", "ap_ip"),
+            ("STA_IP_MODE", "sta_ip_mode"),
+            ("STA_STATIC_IP", "sta_static_ip"),
+            ("STA_STATIC_NETMASK", "sta_static_netmask"),
+            ("STA_STATIC_GATEWAY", "sta_static_gateway"),
+            ("STA_STATIC_DNS", "sta_static_dns"),
+        ):
+            value = system.get(key, "")
+            if isinstance(value, bool):
+                value = "true" if value else "false"
+            lines.append("%s=%s" % (env_key, value))
+        lines.append("")
+
+        mesh = state["mesh"]
+        lines.append("# --- Parent/Child mesh (WIP) ---")
+        lines.append("MESH_ROLE=%s" % mesh.get("role", "none"))
+        lines.append("MESH_SSID=%s" % mesh.get("ssid", ""))
+        lines.append("MESH_PASSWORD=%s" % mesh.get("password", ""))
+        lines.append("")
+
+        if state["devices"]:
+            lines.append("# --- Devices ---")
+            for i, dev in enumerate(state["devices"], 1):
+                lines.append("DEVICE_%d_NAME=%s" % (i, dev["name"]))
+                lines.append("DEVICE_%d_START_CHANNEL=%d" % (i, dev["start_channel"]))
+                for j, ch in enumerate(dev.get("channels", []), 1):
+                    lines.append("DEVICE_%d_CHANNEL_%d_OFFSET=%d" % (i, j, ch["offset"]))
+                    lines.append("DEVICE_%d_CHANNEL_%d_NAME=%s" % (i, j, ch["name"]))
+                    lines.append("DEVICE_%d_CHANNEL_%d_TYPE=%s" % (i, j, ch["type"]))
+                lines.append("")
+
+        body = ("\n".join(lines) + "\n").encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain")
+        self.send_header("Content-Disposition", "attachment; filename=config.env")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     # -- routing --
 
     def do_GET(self):
@@ -150,6 +229,8 @@ class MockHandler(SimpleHTTPRequestHandler):
             return self._json(self.state["mesh"])
         if path == "/api/info":
             return self._json(self.state["info"])
+        if path == "/api/export-env":
+            return self._env_download()
         if path == "/wiki.md":
             self.path = "/wiki.md"
         if path == "/":

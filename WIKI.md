@@ -10,6 +10,7 @@ See [README.md](README.md) for hardware, wiring and first-time setup.
   - [Command syntax](#command-syntax)
   - [Command reference](#command-reference)
 - [Deploying](#deploying)
+- [The .env file](#the-env-file)
 - [Filesystem write access](#filesystem-write-access)
 - [Channel types](#channel-types)
 - [HTTP API](#http-api)
@@ -289,58 +290,174 @@ handy when you are about to deploy again.
 | `--no-reboot` | Skip the final reboot and stay in config mode |
 | `--force` (also `--reset-config`) | Overwrite `data/*.json` from `.env` instead of only filling in what is missing |
 
-### Preloading settings from .env
+### Preloading settings
 
-Copy `.env.example` to `.env` and fill in what you want a freshly flashed board
-to start with. `deploy.py` reads it and seeds `data/*.json` on the target.
+`deploy.py` can seed the board's config from a `.env` file at the repo root, so a
+freshly flashed box comes up already knowing your networks, your broker and your
+fixtures. See [The .env file](#the-env-file) for the full reference.
 
-| Group | Keys |
+## The .env file
+
+`.env` lives at the repo root, next to `tools/`. It is **gitignored**, because it
+holds passwords in clear text. `.env.example` is the committed template.
+
+Two ways to get one:
+
+- Copy `.env.example` and fill it in by hand.
+- Configure a board through the web UI, then press **Export .env** under
+  **Settings**, **Configuration**. That writes every key the board knows about,
+  which is the reliable way to get a complete file.
+
+### Syntax
+
+```
+# comments start with a hash
+KEY=value
+QUOTED="value with spaces"
+```
+
+The parser is deliberately small:
+
+- One `KEY=value` per line.
+- Blank lines and lines starting with `#` are ignored, as is any line with no
+  `=` in it.
+- A single or double quote pair around the value is stripped. Quotes are only
+  needed for values with leading or trailing spaces.
+- Everything after the first `=` is the value, so `MQTT_PASSWORD=a=b=c` works.
+- No variable expansion, no `export` prefix, no multi-line values. A `#` partway
+  through a line is part of the value, not a comment.
+
+### Numbered groups
+
+WiFi networks and fixtures repeat, so they carry a number: `WIFI_1_*`,
+`WIFI_2_*`, and `DEVICE_1_*`, `DEVICE_2_*`. Channels are numbered inside their
+fixture: `DEVICE_1_CHANNEL_1_*`.
+
+The numbers only group keys together and order them. They do not have to start
+at 1 or be contiguous, and they sort numerically, so `WIFI_10` comes after
+`WIFI_2` rather than after `WIFI_1`.
+
+A WiFi group with no `SSID` is dropped, as is a device group with no `NAME`.
+
+### WiFi
+
+| Key | Default | Meaning |
+|---|---|---|
+| `WIFI_<n>_SSID` | required | Network name. Without it the whole group is skipped |
+| `WIFI_<n>_PASSWORD` | empty | Leave empty for an open network |
+| `WIFI_<n>_PRIORITY` | `0` | Higher wins when the board picks a network at boot. Anything not a number counts as 0 |
+
+### MQTT
+
+Present only if at least one `MQTT_` key is in the file. Otherwise `mqtt.json` is
+not touched at all.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `MQTT_ENABLED` | `false` | Whether the bridge starts. Only runs once the board is on a real network |
+| `MQTT_HOST` | empty | Broker address. Empty means the bridge stays off whatever `MQTT_ENABLED` says |
+| `MQTT_PORT` | `1883` | |
+| `MQTT_USERNAME` | empty | |
+| `MQTT_PASSWORD` | empty | |
+| `MQTT_BASE_TOPIC` | `dmxwifi` | Prefix for the `set` and `state` topics |
+| `MQTT_DISCOVERY_PREFIX` | `homeassistant` | Where Home Assistant looks for discovery configs |
+
+### DMX, hotspot and static IP
+
+These all live in `system.json`, so they are one group. Naming any one of them
+means the whole file gets written.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `DMX_TX_PIN` | `D4` | CircuitPython `board` pin wired to the MAX485 `DI` |
+| `DMX_DIR_PIN_ENABLED` | `false` | Leave off when `DE` and `RE` are tied to VCC |
+| `DMX_DIR_PIN` | `D3` | Pin driving `DE` and `RE`, used only when the above is on |
+| `HOSTNAME` | `ESP-DMX` | |
+| `AP_SSID` | `ESP-DMX` | Config hotspot name |
+| `AP_PASSWORD` | `DMX4ALL1` | Empty makes the hotspot open |
+| `AP_IP` | `1.1.1.1` | Address the board serves the UI on in hotspot mode |
+| `STA_IP_MODE` | `dhcp` | `dhcp` or `static` |
+| `STA_STATIC_IP` | empty | Only used when the mode is `static` |
+| `STA_STATIC_NETMASK` | `255.255.255.0` | |
+| `STA_STATIC_GATEWAY` | empty | Required for static mode, along with the address |
+| `STA_STATIC_DNS` | `1.1.1.1` | Optional |
+
+A static address is applied after joining a network, and only when the mode is
+`static` **and** both an address and a gateway are set. Values that do not parse
+are ignored and the board stays on DHCP, so a typo costs you a fixed address but
+never the network.
+
+### Parent and child mesh
+
+Stored only, no behaviour yet.
+
+| Key | Default |
 |---|---|
-| WiFi | `WIFI_1_SSID`, `WIFI_1_PASSWORD`, `WIFI_1_PRIORITY`, then `WIFI_2_*` and so on |
-| MQTT | `MQTT_ENABLED`, `MQTT_HOST`, `MQTT_PORT`, `MQTT_USERNAME`, `MQTT_PASSWORD`, `MQTT_BASE_TOPIC`, `MQTT_DISCOVERY_PREFIX` |
-| DMX and hotspot | `DMX_TX_PIN`, `DMX_DIR_PIN_ENABLED`, `DMX_DIR_PIN`, `HOSTNAME`, `AP_SSID`, `AP_PASSWORD`, `AP_IP` |
-| Static IP | `STA_IP_MODE`, `STA_STATIC_IP`, `STA_STATIC_NETMASK`, `STA_STATIC_GATEWAY`, `STA_STATIC_DNS` |
-| Mesh | `MESH_ROLE`, `MESH_SSID`, `MESH_PASSWORD` |
-| Fixtures | `DEVICE_1_NAME`, `DEVICE_1_START_CHANNEL`, `DEVICE_1_CHANNEL_1_OFFSET`, `DEVICE_1_CHANNEL_1_NAME`, `DEVICE_1_CHANNEL_1_TYPE`, and so on |
+| `MESH_ROLE` | `none`, or `parent` or `child` |
+| `MESH_SSID` | empty |
+| `MESH_PASSWORD` | empty |
+
+### Fixtures
+
+| Key | Default | Meaning |
+|---|---|---|
+| `DEVICE_<n>_NAME` | required | Fixture name. Without it the group is skipped |
+| `DEVICE_<n>_START_CHANNEL` | `1` | First DMX address of the fixture |
+| `DEVICE_<n>_CHANNEL_<m>_OFFSET` | `<m>` | Offset inside the fixture, so the DMX address is `START_CHANNEL + OFFSET - 1` |
+| `DEVICE_<n>_CHANNEL_<m>_NAME` | `Channel <m>` | Label shown on the Home page |
+| `DEVICE_<n>_CHANNEL_<m>_TYPE` | `slider` | One of `slider`, `button`, `button-momentary`, `button-switch` |
+
+Channel types here are the exact stored names, not the serial console's
+shorthands. `toggle` will not work, `button-switch` will.
+
+```
+DEVICE_1_NAME=Studio Par
+DEVICE_1_START_CHANNEL=1
+DEVICE_1_CHANNEL_1_OFFSET=1
+DEVICE_1_CHANNEL_1_NAME=Dimmer
+DEVICE_1_CHANNEL_1_TYPE=slider
+DEVICE_1_CHANNEL_2_OFFSET=2
+DEVICE_1_CHANNEL_2_NAME=Heater
+DEVICE_1_CHANNEL_2_TYPE=button-switch
+```
+
+### What a deploy does with it
 
 Default behaviour is deliberately cautious:
 
-- **WiFi entries are merged.** New SSIDs are appended, and ones already on the
-  board are left alone.
-- **Everything else is only written if the file is missing**, so redeploying
+- **WiFi entries are merged.** New SSIDs are appended, and ones the board already
+  knows are left exactly as they are, password and priority included.
+- **Every other group is only written when its file is missing**, so redeploying
   does not undo changes you made through the UI.
-- `--force` overrides both and overwrites from `.env`.
+- **A group with no keys in `.env` is never written**, with or without `--force`.
+  An `.env` holding only `WIFI_` entries cannot touch your fixtures.
 
-`.env` is gitignored, because it holds passwords in clear text.
+`--force` overrides the first two and rewrites from `.env`.
 
 > [!WARNING]
 > **`--force` resets keys your `.env` never mentions.** Each group is written
-> whole. As soon as one `MQTT_`, one system key, or one `MESH_` key is present,
-> the entire file is rebuilt, and anything absent from `.env` goes back to its
-> shipping default rather than staying as it is on the board.
+> whole. As soon as one `MQTT_` key, one system key or one `MESH_` key is
+> present, the entire file is rebuilt and anything absent from `.env` goes back
+> to its shipping default instead of staying as it is on the board.
 >
 > The usual way to get bitten: an `.env` that sets `DMX_TX_PIN` and `AP_SSID` but
 > no `STA_` keys. Deploy with `--force` and a board you had pinned to a static
-> address quietly goes back to DHCP, so it comes up on a different IP.
+> address quietly returns to DHCP, so it comes up on a different address.
 >
-> If you deploy with `--force` habitually, keep `.env` complete. The easiest way
-> is to press **Export .env** on the Settings page and use that file, since the
-> board writes every key it knows about.
+> If you deploy with `--force` habitually, keep `.env` complete. Press
+> **Export .env** and use that file.
 
-Groups with no keys at all in `.env` are never written, with or without
-`--force`. An `.env` holding only `WIFI_` entries cannot touch your fixtures.
+### Exporting from a board
 
-### Going the other way
+**Settings**, **Configuration**, **Export .env**, or fetch `/api/export-env`
+directly. Drop the result next to `tools/deploy.py` as `.env` and the next flash
+starts from exactly that state, which makes it a quick way to clone a working box
+or to snapshot one before experimenting.
 
-A board you already configured through the UI can hand its settings back as an
-`.env` file. **Settings**, **Configuration**, **Export .env**, or fetch
-`/api/export-env` directly. Drop the result next to `tools/deploy.py` as `.env`
-and the next flash starts from exactly that state, which makes it a quick way to
-clone a working box or to keep a backup before experimenting.
-
-The export covers saved networks, MQTT, system and static IP settings, mesh
-settings and every fixture with its channels. It writes the keys `deploy.py`
-reads, so the round trip is lossless.
+The export covers saved networks, MQTT, the whole system group including static
+IP, mesh settings and every fixture with its channels. It writes the keys
+`deploy.py` reads, and the suite checks that round trip, so nothing is lost on
+the way back.
 
 ## Filesystem write access
 
@@ -607,7 +724,8 @@ and `ipaddress` all exist on CPython with the API the firmware uses.
 | `test_web_api.py` | Every HTTP route the web UI calls |
 | `test_boot.py` | Which side owns the filesystem after boot |
 | `test_integration.py` | The whole stack wired the way `code.py` wires it |
-| `test_deploy_tool.py` | `.env` parsing and seeding in `tools/deploy.py`, and that its output matches what the firmware reads back |
+| `test_deploy_tool.py` | `.env` parsing and seeding in `tools/deploy.py`, the shipped `.env.example`, and the per-platform eject commands |
+| `test_serial_tool.py` | The port picker in `tools/serial_console.py` |
 | `test_ui.py` | The real web UI in a real browser, against a mock board |
 
 The deploy tests matter more than they look. That script decides what lands in

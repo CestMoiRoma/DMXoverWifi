@@ -40,7 +40,8 @@ Without playwright the browser tests skip and the rest still runs.
 | `test_web_api.py` | Every HTTP route the web UI calls |
 | `test_boot.py` | Which side owns the filesystem after boot |
 | `test_integration.py` | The whole stack wired the way `code.py` wires it |
-| `test_deploy_tool.py` | `.env` parsing and seeding in `tools/deploy.py` |
+| `test_deploy_tool.py` | `.env` parsing and seeding in `tools/deploy.py`, plus the eject commands per platform |
+| `test_serial_tool.py` | The port picker in `tools/serial_console.py` |
 | `test_ui.py` | The real web UI in a real browser, against the mock board |
 | `ui/mock_server.py` | Serves `www/` with a fake API and demo fixtures |
 | `ui/screenshot_ui.py` | Rewrites `docs/images/ui-*.png` |

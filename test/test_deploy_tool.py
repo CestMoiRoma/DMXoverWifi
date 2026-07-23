@@ -428,6 +428,135 @@ def test_the_seeded_files_are_readable_by_the_firmware(target, monkeypatch):
     assert [d.name for d in manager.devices] == ["Par"]
 
 
+# -- the shipped .env.example ----------------------------------------------
+
+
+def test_the_shipped_env_example_parses():
+    env = deploy.parse_env(REPO_ROOT / ".env.example")
+
+    assert env, ".env.example produced nothing, so the template is broken"
+    assert "WIFI_1_SSID" in env
+
+
+def test_every_key_documented_in_env_example_is_one_deploy_actually_reads():
+    """A key in the template that nothing consumes is a lie to the user."""
+    env = deploy.parse_env(REPO_ROOT / ".env.example")
+
+    consumed = set(deploy.SYSTEM_KEYS)
+    for key in env:
+        if key.startswith(("WIFI_", "MQTT_", "MESH_", "DEVICE_")):
+            continue
+        assert key in consumed, "%s is in .env.example but deploy.py ignores it" % key
+
+
+def test_the_env_example_seeds_a_board_the_firmware_can_read(target, monkeypatch):
+    from src import settings_store
+
+    env = deploy.parse_env(REPO_ROOT / ".env.example")
+    deploy.apply_env_defaults(env, target, force=False)
+    monkeypatch.setattr(settings_store, "DATA_DIR", str(target / "data"))
+
+    system = settings_store.load("system.json")
+    assert set(system) == set(settings_store.DEFAULTS["system.json"])
+    assert settings_store.load("wifi_networks.json")[0]["ssid"]
+    assert settings_store.load("mqtt.json")["base_topic"]
+
+
+def test_the_env_example_covers_every_group_the_deploy_script_understands():
+    text = (REPO_ROOT / ".env.example").read_text()
+
+    for key in (
+        "WIFI_1_SSID",
+        "MQTT_HOST",
+        "DMX_TX_PIN",
+        "AP_SSID",
+        "STA_IP_MODE",
+        "MESH_ROLE",
+        "DEVICE_1_NAME",
+    ):
+        assert key in text, "%s is undocumented in .env.example" % key
+
+
+# -- ejecting the volume ---------------------------------------------------
+
+
+@pytest.fixture
+def recorded_commands(monkeypatch):
+    """Capture what eject_host shells out to, instead of running it."""
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append(list(command))
+
+        class Result:
+            stdout = ""
+
+        return Result()
+
+    monkeypatch.setattr(deploy.subprocess, "run", fake_run)
+    return calls
+
+
+def test_windows_ejects_through_the_shell_verb(monkeypatch, recorded_commands):
+    monkeypatch.setattr(deploy.sys, "platform", "win32")
+
+    deploy.eject_host("E:\\")
+
+    assert recorded_commands[0][0] == "powershell"
+    assert "InvokeVerb('Eject')" in recorded_commands[0][-1]
+    assert "ParseName('E:')" in recorded_commands[0][-1], "the trailing slash must go"
+
+
+def test_macos_ejects_with_diskutil(monkeypatch, recorded_commands):
+    monkeypatch.setattr(deploy.sys, "platform", "darwin")
+
+    deploy.eject_host("/Volumes/CIRCUITPY")
+
+    assert recorded_commands[0] == ["diskutil", "eject", "/Volumes/CIRCUITPY"]
+
+
+def test_linux_resolves_the_block_device_before_unmounting(monkeypatch):
+    """udisksctl unmounts by device, never by mount point."""
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append(list(command))
+
+        class Result:
+            stdout = "/dev/sdb1\n" if command[0] == "findmnt" else ""
+
+        return Result()
+
+    monkeypatch.setattr(deploy.sys, "platform", "linux")
+    monkeypatch.setattr(deploy.subprocess, "run", fake_run)
+
+    deploy.eject_host("/media/steepy/CIRCUITPY")
+
+    assert calls[0][0] == "findmnt"
+    assert calls[1] == ["udisksctl", "unmount", "-b", "/dev/sdb1"]
+
+
+def test_linux_falls_back_to_umount_when_the_device_cannot_be_resolved(
+    monkeypatch, recorded_commands
+):
+    monkeypatch.setattr(deploy.sys, "platform", "linux")
+
+    deploy.eject_host("/media/steepy/CIRCUITPY")
+
+    assert recorded_commands[-1] == ["umount", "/media/steepy/CIRCUITPY"]
+
+
+# -- waiting for the drive -------------------------------------------------
+
+
+def test_waiting_returns_as_soon_as_the_drive_is_writable(target):
+    assert deploy.wait_for_writable(target, timeout=2) is True
+
+
+def test_waiting_gives_up_on_a_drive_that_never_appears(tmp_path):
+    assert deploy.wait_for_writable(tmp_path / "never", timeout=1) is False
+
+
 # -- writability probe -----------------------------------------------------
 
 

@@ -42,7 +42,7 @@ expose every DMX channel to Home Assistant over MQTT.
 | **Static or DHCP** | Take whatever address the router hands out, or pin a fixed one |
 | **MQTT and Home Assistant** | Optional. Publishes auto-discovery configs, so every channel turns up as a `number`, `switch` or `button` entity |
 | **Serial console** | A full text command set over USB. Configure, inspect and reboot the board without a browser |
-| **Off-board test suite** | 293 tests that run the firmware on a PC against a fake ESP32, so a change can be checked before it is flashed |
+| **Off-board test suite** | 318 tests that run the firmware on a PC against a fake ESP32, so a change can be checked before it is flashed |
 | **Parent and child mesh** | Present in the UI and the settings store. **Work in progress: stored only, no radio behaviour yet** |
 
 ## Hardware
@@ -129,6 +129,9 @@ Skip this and set everything up through the UI instead. An already-configured
 board can also hand its settings back with **Export .env** on the Settings page,
 which makes cloning a working box a two-step job.
 
+[The .env file](WIKI.md#the-env-file) documents every key, its default and what
+a deploy does with it.
+
 ### 4. Deploy
 
 ```bash
@@ -146,9 +149,9 @@ know your drive letter and port:
 python tools/deploy.py E:/ --port COM9 --force
 ```
 
-`--force` reseeds `data/*.json` from `.env` on every deploy. Read the
-[warning about what that resets](WIKI.md#preloading-settings-from-env) before
-making it a habit.
+`--force` reseeds `data/*.json` from `.env` on every deploy. Read
+[what a deploy does with it](WIKI.md#what-a-deploy-does-with-it) before making
+that a habit, because `--force` also resets keys your `.env` never mentions.
 
 Once the firmware has run at least once, the board owns the filesystem and the
 drive is read-only from the PC. The script handles that by itself: it asks which

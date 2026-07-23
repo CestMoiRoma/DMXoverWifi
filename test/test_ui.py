@@ -284,6 +284,109 @@ def test_the_mesh_section_is_marked_work_in_progress(page):
     assert "WIP" in page.inner_text("#view-settings")
 
 
+# -- settings: static IP ---------------------------------------------------
+
+
+def test_the_static_ip_form_is_populated_from_the_board(page):
+    show(page, "settings")
+
+    assert page.input_value("#staticip-mode") == "dhcp"
+    assert page.input_value("#staticip-netmask") == "255.255.255.0"
+    assert page.input_value("#staticip-dns") == "1.1.1.1"
+
+
+def test_the_address_fields_are_greyed_out_while_on_dhcp(page):
+    show(page, "settings")
+
+    for field in ("#staticip-ip", "#staticip-netmask", "#staticip-gateway", "#staticip-dns"):
+        assert page.is_disabled(field), "%s should not be editable under DHCP" % field
+
+
+def test_choosing_static_enables_the_address_fields(page):
+    show(page, "settings")
+
+    page.select_option("#staticip-mode", "static")
+    page.wait_for_timeout(200)
+
+    for field in ("#staticip-ip", "#staticip-netmask", "#staticip-gateway", "#staticip-dns"):
+        assert page.is_enabled(field)
+
+
+def test_switching_back_to_dhcp_greys_them_out_again(page):
+    show(page, "settings")
+    page.select_option("#staticip-mode", "static")
+    page.wait_for_timeout(150)
+
+    page.select_option("#staticip-mode", "dhcp")
+    page.wait_for_timeout(150)
+
+    assert page.is_disabled("#staticip-ip")
+
+
+def test_saving_a_static_address_sends_every_field(page, board):
+    show(page, "settings")
+    page.select_option("#staticip-mode", "static")
+    page.fill("#staticip-ip", "192.168.1.50")
+    page.fill("#staticip-netmask", "255.255.255.0")
+    page.fill("#staticip-gateway", "192.168.1.1")
+    page.fill("#staticip-dns", "9.9.9.9")
+
+    page.click('#staticip-form button[type="submit"]')
+    page.wait_for_timeout(400)
+
+    system = board["state"]["system"]
+    assert system["sta_ip_mode"] == "static"
+    assert system["sta_static_ip"] == "192.168.1.50"
+    assert system["sta_static_gateway"] == "192.168.1.1"
+    assert system["sta_static_dns"] == "9.9.9.9"
+
+    # Put it back so the shared board does not leak into later tests.
+    page.select_option("#staticip-mode", "dhcp")
+    page.click('#staticip-form button[type="submit"]')
+    page.wait_for_timeout(300)
+
+
+# -- settings: .env export -------------------------------------------------
+
+
+def test_the_export_button_offers_a_download(page):
+    show(page, "settings")
+    link = page.query_selector('a[href="/api/export-env"]')
+
+    assert link is not None, "the Export .env link is gone"
+    assert link.get_attribute("download") == "config.env"
+    assert "Export" in link.inner_text()
+
+
+def test_the_export_returns_an_env_file_the_deploy_script_can_read(page):
+    show(page, "settings")
+
+    body = page.evaluate("() => fetch('/api/export-env').then(r => r.text())")
+
+    # Key names only. Values come from a board fixture other tests write to.
+    for key in (
+        "WIFI_1_SSID=",
+        "MQTT_HOST=",
+        "MQTT_BASE_TOPIC=",
+        "DMX_TX_PIN=",
+        "AP_SSID=",
+        "STA_IP_MODE=",
+        "MESH_ROLE=",
+        "DEVICE_1_NAME=",
+        "DEVICE_1_CHANNEL_1_TYPE=",
+    ):
+        assert key in body, "%s missing from the exported .env" % key
+
+
+def test_the_exported_file_downloads_under_a_sensible_name(page):
+    show(page, "settings")
+
+    with page.expect_download() as info:
+        page.click('a[href="/api/export-env"]')
+
+    assert info.value.suggested_filename == "config.env"
+
+
 # -- info ------------------------------------------------------------------
 
 
