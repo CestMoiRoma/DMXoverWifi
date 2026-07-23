@@ -1,6 +1,7 @@
 import gc
 
 import microcontroller
+import storage
 import usb_cdc
 
 from . import settings_store
@@ -15,6 +16,8 @@ HELP_LINES = (
     "Set-System wifi-list                              - saved + visible networks",
     "Set-System mqtt-enable broker=<ip> user=<u> passwd=<p> [port=<n>] - same as Add-mqtt",
     "Set-System mqtt-disable                           - disable mqtt",
+    "Set-System unlock-write                           - make filesystem PC-writable until"
+    " reboot (recovery fallback; CircuitPython loses write access until next reboot)",
     "Set-device add name=<name>                        - add a device",
     "Set-device add-channel device=<name> name=<ch> channel=<offset> mode=<slider|bool>",
     "Set-device del-channel name=<ch> [device=<name>]  - remove a channel",
@@ -66,6 +69,7 @@ class SerialConsole:
             "wifi-list": self._sys_wifi_list,
             "mqtt-enable": self._sys_mqtt_enable,
             "mqtt-disable": self._sys_mqtt_disable,
+            "unlock-write": self._sys_unlock_write,
         }
         self._set_device_subs = {
             "add": self._dev_add,
@@ -271,6 +275,13 @@ class SerialConsole:
 
     def _sys_mqtt_disable(self, args):
         return self._mqtt_disable(args)
+
+    def _sys_unlock_write(self, args):
+        storage.remount("/", readonly=True)
+        return (
+            "filesystem is now PC-writable; CircuitPython can no longer save config "
+            "until the next reboot"
+        )
 
     # -- Set-device subcommands --
 

@@ -17,10 +17,10 @@ DEFAULTS = {
     },
     "system.json": {
         "dmx_tx_pin": "D4",
-        "dmx_dir_pin": "TX",
+        "dmx_dir_pin": "D3",
         "hostname": "ESP-DMX",
         "ap_ssid": "ESP-DMX",
-        "ap_password": "DMX4ALL",
+        "ap_password": "DMX4ALL1",
         "ap_ip": "1.1.1.1",
     },
 }
