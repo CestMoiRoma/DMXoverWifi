@@ -1,6 +1,7 @@
 """The HTTP surface: static pages plus the JSON API the web UI drives."""
 import pytest
 
+from conftest import REPO_ROOT
 from src import settings_store
 
 
@@ -297,3 +298,83 @@ def test_the_online_wiki_link_points_at_the_repo(server):
 
     assert info["wiki_online"].startswith(info["repo"])
     assert info["wiki_online"].endswith("WIKI.md")
+
+
+# -- .env export -----------------------------------------------------------
+
+
+def env_lines(server):
+    response = server.server.dispatch("GET", "/api/export-env")
+    return response, dict(
+        line.split("=", 1)
+        for line in response.body.splitlines()
+        if line and not line.startswith("#")
+    )
+
+
+def test_the_export_downloads_as_an_env_file(server):
+    response, _ = env_lines(server)
+
+    assert response.content_type == "text/plain"
+    assert response.headers["Content-Disposition"] == "attachment; filename=config.env"
+
+
+def test_the_export_carries_the_current_settings(server):
+    server.server.dispatch("POST", "/api/system", {"dmx_tx_pin": "IO7", "hostname": "STAGE"})
+    server.server.dispatch("POST", "/api/mqtt", {"enabled": True, "host": "broker.local"})
+
+    _, values = env_lines(server)
+
+    assert values["DMX_TX_PIN"] == "IO7"
+    assert values["HOSTNAME"] == "STAGE"
+    assert values["MQTT_ENABLED"] == "true"
+    assert values["MQTT_HOST"] == "broker.local"
+
+
+def test_the_export_carries_saved_networks_with_their_priority(server):
+    server.server.dispatch(
+        "POST", "/api/wifi", {"ssid": "StageNet", "password": "s3cret", "priority": 7}
+    )
+
+    _, values = env_lines(server)
+
+    assert values["WIFI_1_SSID"] == "StageNet"
+    assert values["WIFI_1_PASSWORD"] == "s3cret"
+    assert values["WIFI_1_PRIORITY"] == "7"
+
+
+def test_the_export_carries_fixtures_and_their_channels(server, par_fixture):
+    _, values = env_lines(server)
+
+    assert values["DEVICE_1_NAME"] == "PAR LED"
+    assert values["DEVICE_1_START_CHANNEL"] == "1"
+    assert values["DEVICE_1_CHANNEL_1_NAME"] == "Dimmer"
+    assert values["DEVICE_1_CHANNEL_3_TYPE"] == "button-momentary"
+    assert values["DEVICE_1_CHANNEL_4_TYPE"] == "button-switch"
+
+
+def test_the_export_round_trips_through_the_deploy_parser(server, par_fixture, tmp_path):
+    """What the board exports must be what deploy.py can read back in."""
+    import importlib.util
+
+    response, _ = env_lines(server)
+    env_file = tmp_path / "exported.env"
+    env_file.write_text(response.body)
+
+    spec = importlib.util.spec_from_file_location(
+        "deploy_tool", REPO_ROOT / "tools" / "deploy.py"
+    )
+    deploy = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(deploy)
+
+    env = deploy.parse_env(env_file)
+    devices = deploy.devices_defaults_from_env(env)
+
+    assert devices[0]["name"] == "PAR LED"
+    assert [c["type"] for c in devices[0]["channels"]] == [
+        "slider",
+        "slider",
+        "button-momentary",
+        "button-switch",
+    ]
+    assert deploy.system_defaults_from_env(env)["dmx_tx_pin"] == "D4"

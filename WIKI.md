@@ -276,7 +276,7 @@ handy when you are about to deploy again.
 |---|---|
 | `--port PORT` | Serial port, only needed when the drive is locked |
 | `--no-reboot` | Skip the final reboot and stay in config mode |
-| `--reset-config` | Overwrite `data/*.json` from `.env` instead of only filling in what is missing |
+| `--force` (also `--reset-config`) | Overwrite `data/*.json` from `.env` instead of only filling in what is missing |
 
 ### Preloading settings from .env
 
@@ -298,9 +298,21 @@ Default behaviour is deliberately cautious:
   board are left alone.
 - **Everything else is only written if the file is missing**, so redeploying
   does not undo changes you made through the UI.
-- `--reset-config` overrides both and overwrites from `.env`.
+- `--force` overrides both and overwrites from `.env`.
 
 `.env` is gitignored, because it holds passwords in clear text.
+
+### Going the other way
+
+A board you already configured through the UI can hand its settings back as an
+`.env` file. **Settings**, **Configuration**, **Export .env**, or fetch
+`/api/export-env` directly. Drop the result next to `tools/deploy.py` as `.env`
+and the next flash starts from exactly that state, which makes it a quick way to
+clone a working box or to keep a backup before experimenting.
+
+The export covers saved networks, MQTT, system and static IP settings, mesh
+settings and every fixture with its channels. It writes the keys `deploy.py`
+reads, so the round trip is lossless.
 
 ## Filesystem write access
 
@@ -425,6 +437,7 @@ MQTT. Values are clamped to 0 through 255. A missing `value` is treated as 0.
 | `GET` and `POST` | `/api/system` | Read or merge `system.json`: pins, hostname, hotspot, static IP |
 | `GET` and `POST` | `/api/mesh` | Read or merge `mesh.json`, work in progress, stored only |
 | `GET` | `/api/info` | Version, author, repository and wiki links, for the Info page |
+| `GET` | `/api/export-env` | The board's whole live config as a `.env` file, served as a download |
 
 `POST` merges into the existing config, so you can send a single key.
 

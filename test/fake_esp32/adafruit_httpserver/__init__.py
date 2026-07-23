@@ -34,25 +34,27 @@ class Request:
 
 
 class Response:
-    def __init__(self, request, status=None):
+    def __init__(self, request, body="", status=None, content_type=None, headers=None):
         self.request = request
         code, reason = status if status else (200, "OK")
         self.status_code = code
         self.reason = reason
+        self.body = body
+        self.content_type = content_type
+        self.headers = dict(headers or {})
 
 
 class JSONResponse(Response):
-    def __init__(self, request, data, status=None):
-        super().__init__(request, status)
+    def __init__(self, request, data, status=None, headers=None):
+        super().__init__(request, status=status, headers=headers)
         self.data = data
 
 
 class FileResponse(Response):
     def __init__(self, request, filename, root_path=None, content_type=None, status=None):
-        super().__init__(request, status)
+        super().__init__(request, status=status, content_type=content_type)
         self.filename = filename
         self.root_path = root_path
-        self.content_type = content_type
 
 
 class Route:

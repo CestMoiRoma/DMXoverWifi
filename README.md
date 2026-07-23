@@ -42,7 +42,7 @@ expose every DMX channel to Home Assistant over MQTT.
 | **Static or DHCP** | Take whatever address the router hands out, or pin a fixed one |
 | **MQTT and Home Assistant** | Optional. Publishes auto-discovery configs, so every channel turns up as a `number`, `switch` or `button` entity |
 | **Serial console** | A full text command set over USB. Configure, inspect and reboot the board without a browser |
-| **Off-board test suite** | 243 tests that run the firmware on a PC against a fake ESP32, so a change can be checked before it is flashed |
+| **Off-board test suite** | 248 tests that run the firmware on a PC against a fake ESP32, so a change can be checked before it is flashed |
 | **Parent and child mesh** | Present in the UI and the settings store. **Work in progress: stored only, no radio behaviour yet** |
 
 ## Hardware
@@ -125,7 +125,9 @@ with: WiFi networks, MQTT broker, DMX pins, even a first set of fixtures. The
 deploy script seeds them onto the board so a fresh flash is already configured.
 `.env` is gitignored, because it holds passwords in clear text.
 
-Skip this and set everything up through the UI instead.
+Skip this and set everything up through the UI instead. An already-configured
+board can also hand its settings back with **Export .env** on the Settings page,
+which makes cloning a working box a two-step job.
 
 ### 4. Deploy
 
@@ -189,7 +191,8 @@ Create, inspect and delete fixtures. Channels take an offset, a name and a type.
 
 Saved networks with priorities and a scanner, the full MQTT and Home Assistant
 configuration, DMX pin assignments, hotspot credentials, static IP settings, and
-the work-in-progress parent and child section.
+the work-in-progress parent and child section. **Export .env** hands the whole
+live config back as a file you can deploy onto another board.
 
 ![Settings page](docs/images/ui-settings.png)
 
