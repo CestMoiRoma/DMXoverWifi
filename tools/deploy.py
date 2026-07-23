@@ -328,7 +328,8 @@ def devices_defaults_from_env(env):
 
 
 def merge_wifi_defaults(target, entries):
-    """Merge entries into target/data/wifi_networks.json (skip existing SSIDs)."""
+    """Append entries into target/data/wifi_networks.json (skip existing SSIDs).
+    Use --force to overwrite instead."""
     data_dir = target / "data"
     data_dir.mkdir(exist_ok=True)
     fp = data_dir / "wifi_networks.json"
@@ -372,7 +373,7 @@ def apply_env_defaults(env, target, force):
             print("  wifi_networks.json: overwritten with %d entries" % len(wifi_entries))
         else:
             added = merge_wifi_defaults(target, wifi_entries)
-            print("  wifi_networks.json: merged %d new entries" % added)
+            print("  wifi_networks.json: %d new entries (existing SSIDs kept)" % added)
 
     for filename, defaults_fn in (
         ("mqtt.json", mqtt_defaults_from_env(env)),
@@ -412,10 +413,13 @@ def main():
         help="Leave the board in config mode after deploy (skip final Reboot).",
     )
     parser.add_argument(
+        "--force",
         "--reset-config",
         action="store_true",
-        help="Force-overwrite target data/*.json from .env (default: only "
-             "write missing files; wifi is merged either way).",
+        dest="force",
+        help="Overwrite every target data/*.json from .env, ignoring what's "
+             "already on the board (default: only write missing files; wifi "
+             "is append-only).",
     )
     args = parser.parse_args()
 
@@ -479,7 +483,7 @@ def main():
     env_path = repo_root / ".env"
     if env_path.exists():
         print("Applying .env defaults:")
-        apply_env_defaults(parse_env(env_path), target, force=args.reset_config)
+        apply_env_defaults(parse_env(env_path), target, force=args.force)
 
     if unlocked_us and not args.no_reboot:
         print("Rebooting board back to normal mode...")
