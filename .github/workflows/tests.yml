@@ -1,0 +1,44 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  docker:
+    name: Full suite in the test container
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the test image
+        run: docker build -f test/Dockerfile -t dmx-wifi-tests .
+
+      - name: Firmware and browser tests
+        run: docker run --rm dmx-wifi-tests python -m pytest test -v
+
+      # Proves the screenshot tooling still drives every page. The PNGs are
+      # thrown away here; regenerating the ones in docs/ is a manual step.
+      - name: Screenshot every UI page
+        run: docker run --rm dmx-wifi-tests python test/ui/screenshot_ui.py --out /tmp/shots
+
+  bare-python:
+    name: Firmware tests without Docker
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - run: pip install pytest
+
+      # No playwright here on purpose: this job proves the suite still runs on a
+      # plain machine, with the browser tests skipping rather than failing.
+      - run: python -m pytest test -v

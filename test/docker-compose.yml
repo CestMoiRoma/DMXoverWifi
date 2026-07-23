@@ -1,0 +1,48 @@
+# Test pipeline. Run from anywhere in the repo:
+#
+#   docker compose -f test/docker-compose.yml run --rm tests
+#   docker compose -f test/docker-compose.yml run --rm screenshots
+#   docker compose -f test/docker-compose.yml run --rm ui
+#
+# The build context is the repository root so the image can copy src/ and www/.
+
+services:
+  # The whole suite: firmware feature tests plus the browser tests.
+  tests:
+    build:
+      context: ..
+      dockerfile: test/Dockerfile
+    image: dmx-wifi-tests
+    command: python -m pytest test -v
+
+  # Firmware only, no browser. Fast, and the one to run while iterating on src/.
+  unit:
+    build:
+      context: ..
+      dockerfile: test/Dockerfile
+    image: dmx-wifi-tests
+    command: python -m pytest test -v --ignore=test/test_ui.py
+
+  # Browser tests only.
+  ui:
+    build:
+      context: ..
+      dockerfile: test/Dockerfile
+    image: dmx-wifi-tests
+    command: python -m pytest test/test_ui.py -v
+
+  # Rewrites docs/images/ui-*.png from the mock board. Mounted so the PNGs land
+  # back in the working tree rather than dying with the container.
+  #
+  # Docker Desktop only mounts drives you have shared with it. If the PNGs come
+  # out unchanged, the mount silently went nowhere; copy them out instead:
+  #   cid=$(docker create dmx-wifi-tests python test/ui/screenshot_ui.py --out /app/shots)
+  #   docker start -a $cid && docker cp $cid:/app/shots/. docs/images && docker rm $cid
+  screenshots:
+    build:
+      context: ..
+      dockerfile: test/Dockerfile
+    image: dmx-wifi-tests
+    volumes:
+      - ../docs/images:/app/docs/images
+    command: python test/ui/screenshot_ui.py --out /app/docs/images

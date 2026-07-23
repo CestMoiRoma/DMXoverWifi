@@ -23,3 +23,6 @@ __pycache__/
 
 # Windows Recycle Bin metadata on this removable drive
 $RECYCLE.BIN/
+
+# Machine-specific TLS interception roots, see test/certs/README.md
+test/certs/*.crt
