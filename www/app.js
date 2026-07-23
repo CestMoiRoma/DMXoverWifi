@@ -31,6 +31,7 @@ function switchView(name) {
   if (name === "home") renderHome();
   if (name === "settings") renderSettings();
   if (name === "devices") renderDevices();
+  if (name === "info") renderInfo();
 }
 
 document.querySelectorAll(".nav-btn").forEach((btn) => {
@@ -262,6 +263,39 @@ async function renderDevices() {
     card.appendChild(del);
     list.appendChild(card);
   });
+}
+
+// ---- info view ----
+
+async function renderInfo() {
+  const info = await api("/api/info");
+  document.getElementById("info-version").textContent = info.version;
+
+  const authorLink = el(
+    "a",
+    { href: info.author.url, target: "_blank", rel: "noopener" },
+    [info.author.name]
+  );
+  const authorDd = document.getElementById("info-author");
+  authorDd.innerHTML = "";
+  authorDd.appendChild(authorLink);
+
+  const repoLink = el(
+    "a",
+    { href: info.repo, target: "_blank", rel: "noopener" },
+    ["GitHub"]
+  );
+  const repoDd = document.getElementById("info-repo");
+  repoDd.innerHTML = "";
+  repoDd.appendChild(repoLink);
+
+  const wikiDd = document.getElementById("info-wiki");
+  wikiDd.innerHTML = "";
+  wikiDd.appendChild(
+    el("a", { href: info.wiki_online, target: "_blank", rel: "noopener" }, ["Online (GitHub)"])
+  );
+  wikiDd.appendChild(document.createTextNode(" · "));
+  wikiDd.appendChild(el("a", { href: info.wiki_local, target: "_blank" }, ["Local copy"]));
 }
 
 switchView("home");

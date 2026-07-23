@@ -13,6 +13,7 @@
     <button data-view="home" class="nav-btn active">Home</button>
     <button data-view="devices" class="nav-btn">Device Manager</button>
     <button data-view="settings" class="nav-btn">Settings</button>
+    <button data-view="info" class="nav-btn">Info</button>
   </nav>
 </header>
 
@@ -164,6 +165,21 @@
           <button type="submit">Save</button>
         </div>
       </form>
+    </div>
+  </section>
+
+  <section id="view-info" class="view">
+    <div class="section">
+      <h2>DMX over WiFi</h2>
+      <p class="info-version">version <span id="info-version">â€¦</span></p>
+      <dl class="info-list">
+        <dt>Author</dt>
+        <dd id="info-author"></dd>
+        <dt>Repository</dt>
+        <dd id="info-repo"></dd>
+        <dt>Serial console reference</dt>
+        <dd id="info-wiki"></dd>
+      </dl>
     </div>
   </section>
 </main>

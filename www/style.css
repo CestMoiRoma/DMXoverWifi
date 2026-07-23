@@ -197,3 +197,13 @@ form { margin: 0; }
   gap: 0.5rem;
   margin-top: 0.5rem;
 }
+
+/* -- info view -- */
+
+.info-version { color: var(--muted); margin: 0 0 1rem 0; font-size: 0.9rem; }
+
+.info-list { display: grid; grid-template-columns: max-content 1fr; gap: 0.5rem 1rem; margin: 0; }
+.info-list dt { color: var(--muted); font-size: 0.85rem; }
+.info-list dd { margin: 0; }
+.info-list a { color: var(--accent); text-decoration: none; }
+.info-list a:hover { text-decoration: underline; }
