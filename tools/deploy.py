@@ -10,15 +10,22 @@ If the target drive is read-only (normal boot state), the script will:
   3. Send "Set-System reboot-config" to trigger a reset into config
      mode (host-writable filesystem).
   4. Wait for the drive to re-appear as writable, then copy files.
-  5. Send "Reboot" so the board comes back up in normal (STA) mode.
 
-Requires pyserial for the auto-unlock path (only imported when needed):
+Once the copy is done it sends "Reboot" so the board comes back up in
+normal (STA) mode running the new code. That happens whether or not this
+script did the unlocking, since the drive being writable already usually
+means a previous run left the board in config mode. Pass --no-reboot to
+stay there, or leave out --port to skip the reboot entirely.
+
+Requires pyserial for the serial paths (only imported when needed):
     pip install pyserial
 
 Usage:
-    python tools/deploy.py [TARGET] [--port PORT]
+    python tools/deploy.py [TARGET] [--port PORT] [--force]
+    python deploy.py E:/ --port COM9 --force        # from inside tools/
 
-If TARGET or --port are omitted, you'll be prompted.
+If TARGET or --port are omitted, you'll be prompted. The script locates the
+repo from its own path, so it does not care what directory you run it from.
 """
 import argparse
 import json
@@ -108,7 +115,26 @@ def eject_host(target):
     elif sys.platform == "darwin":
         subprocess.run(["diskutil", "eject", path], check=False)
     else:
-        subprocess.run(["udisksctl", "unmount", "--path", path], check=False)
+        # udisksctl unmounts by block device, not by mount point, so resolve
+        # the mount point first. Plain umount is the fallback when findmnt or
+        # udisks isn't around.
+        device = ""
+        try:
+            device = subprocess.run(
+                ["findmnt", "--noheadings", "--output", "SOURCE", "--target", path],
+                check=False,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+        except OSError:
+            pass
+        command = ["udisksctl", "unmount", "-b", device] if device else ["umount", path]
+        subprocess.run(
+            command,
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
 
 
 def _open_serial(port):
@@ -428,7 +454,6 @@ def main():
         print("Target %s not found." % target, file=sys.stderr)
         sys.exit(1)
 
-    unlocked_us = False
     port = args.port
     if not is_writable(target):
         print("Target %s is read-only; unlocking via serial..." % target)
@@ -453,7 +478,6 @@ def main():
                     file=sys.stderr,
                 )
                 sys.exit(1)
-        unlocked_us = True
         print("  drive is writable.")
 
     repo_root = Path(__file__).resolve().parent.parent
@@ -490,8 +514,6 @@ def main():
         # freshly-deployed code in normal (STA) mode - even when the drive
         # was already writable at the start (typically because we're still
         # in a config-mode session from a previous unlock).
-        if not port:
-            port = args.port  # may still be None; ok, we'll skip cleanly
         if port:
             print("Rebooting board back to normal mode...")
             try:
@@ -508,9 +530,10 @@ def main():
                     )
         else:
             print(
-                "No --port given and drive was already writable; skipping "
-                "auto-reboot. Send 'Reboot' via serial or reset the board "
-                "manually to leave config mode."
+                "Drive was already writable and no --port was given, so the "
+                "board was not rebooted. Reset it by hand, or pass --port next "
+                "time. On a first flash this is fine: CircuitPython starts the "
+                "new code on its own."
             )
 
     print("Deploy complete.")

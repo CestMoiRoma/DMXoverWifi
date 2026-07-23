@@ -42,7 +42,7 @@ expose every DMX channel to Home Assistant over MQTT.
 | **Static or DHCP** | Take whatever address the router hands out, or pin a fixed one |
 | **MQTT and Home Assistant** | Optional. Publishes auto-discovery configs, so every channel turns up as a `number`, `switch` or `button` entity |
 | **Serial console** | A full text command set over USB. Configure, inspect and reboot the board without a browser |
-| **Off-board test suite** | 248 tests that run the firmware on a PC against a fake ESP32, so a change can be checked before it is flashed |
+| **Off-board test suite** | 293 tests that run the firmware on a PC against a fake ESP32, so a change can be checked before it is flashed |
 | **Parent and child mesh** | Present in the UI and the settings store. **Work in progress: stored only, no radio behaviour yet** |
 
 ## Hardware
@@ -138,6 +138,17 @@ python tools/deploy.py
 It asks where the `CIRCUITPY` drive is mounted, then copies `boot.py`, `code.py`,
 `src/`, `www/` and the vendored `lib/` across. Your saved config under `data/` is
 left alone.
+
+Answer nothing by passing it all up front, which is the form to keep once you
+know your drive letter and port:
+
+```bash
+python tools/deploy.py E:/ --port COM9 --force
+```
+
+`--force` reseeds `data/*.json` from `.env` on every deploy. Read the
+[warning about what that resets](WIKI.md#preloading-settings-from-env) before
+making it a habit.
 
 Once the firmware has run at least once, the board owns the filesystem and the
 drive is read-only from the PC. The script handles that by itself: it asks which

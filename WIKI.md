@@ -237,10 +237,14 @@ See [Filesystem write access](#filesystem-write-access).
 
 ```bash
 python tools/deploy.py                            # asks where the drive is
-python tools/deploy.py E:\                        # Windows
+python tools/deploy.py E:/ --port COM9 --force    # Windows, nothing to answer
 python tools/deploy.py /Volumes/CIRCUITPY         # macOS
 python tools/deploy.py /media/$USER/CIRCUITPY     # Linux
 ```
+
+The script finds the repo from its own location, so it does not care what
+directory you run it from. `python deploy.py E:/ --port COM9 --force` from inside
+`tools/` is the same command.
 
 It syncs `boot.py`, `code.py`, `src/`, `www/` and `lib/`, so the vendored
 CircuitPython libraries land on the board too and there is nothing to copy by
@@ -266,6 +270,13 @@ is read-only from the PC. `deploy.py` notices and handles it:
 
 If the board is running firmware old enough not to know `reboot-config`, the
 script falls back to arming the marker through the raw REPL.
+
+The final reboot happens whether or not the script did the unlocking, because a
+drive that was already writable usually means a previous run left the board in
+config mode. It needs a port to do that, so passing `--port` is worth it even
+when the drive is unlocked. Without one the script says so and leaves the board
+alone, which is harmless on a first flash since CircuitPython starts the new code
+by itself.
 
 Pass `--no-reboot` to leave the board in config mode after the copy, which is
 handy when you are about to deploy again.
@@ -301,6 +312,23 @@ Default behaviour is deliberately cautious:
 - `--force` overrides both and overwrites from `.env`.
 
 `.env` is gitignored, because it holds passwords in clear text.
+
+> [!WARNING]
+> **`--force` resets keys your `.env` never mentions.** Each group is written
+> whole. As soon as one `MQTT_`, one system key, or one `MESH_` key is present,
+> the entire file is rebuilt, and anything absent from `.env` goes back to its
+> shipping default rather than staying as it is on the board.
+>
+> The usual way to get bitten: an `.env` that sets `DMX_TX_PIN` and `AP_SSID` but
+> no `STA_` keys. Deploy with `--force` and a board you had pinned to a static
+> address quietly goes back to DHCP, so it comes up on a different IP.
+>
+> If you deploy with `--force` habitually, keep `.env` complete. The easiest way
+> is to press **Export .env** on the Settings page and use that file, since the
+> board writes every key it knows about.
+
+Groups with no keys at all in `.env` are never written, with or without
+`--force`. An `.env` holding only `WIFI_` entries cannot touch your fixtures.
 
 ### Going the other way
 
@@ -579,7 +607,14 @@ and `ipaddress` all exist on CPython with the API the firmware uses.
 | `test_web_api.py` | Every HTTP route the web UI calls |
 | `test_boot.py` | Which side owns the filesystem after boot |
 | `test_integration.py` | The whole stack wired the way `code.py` wires it |
+| `test_deploy_tool.py` | `.env` parsing and seeding in `tools/deploy.py`, and that its output matches what the firmware reads back |
 | `test_ui.py` | The real web UI in a real browser, against a mock board |
+
+The deploy tests matter more than they look. That script decides what lands in
+`data/*.json` on the target, so a regression there either wipes a saved config or
+silently fails to seed a fresh flash, and neither shows up until the board is in
+your hands. They also assert that the keys `deploy.py` writes are exactly the
+keys `settings_store` expects, so the two cannot drift apart.
 
 ### The mock board
 
