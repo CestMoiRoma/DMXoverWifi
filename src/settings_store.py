@@ -62,5 +62,15 @@ def save(name, data):
         os.stat(DATA_DIR)
     except OSError:
         os.mkdir(DATA_DIR)
-    with open(_path(name), "w") as f:
+    # Write to a sibling then swap. Direct writes have been seen leaving a
+    # 2-byte truncated file on the board when something interrupted mid-json;
+    # this keeps the previous good file intact until the new one is complete.
+    path = _path(name)
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
         json.dump(data, f)
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+    os.rename(tmp, path)
