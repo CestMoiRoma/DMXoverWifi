@@ -37,7 +37,7 @@ class WifiManager:
             pass
         return results
 
-    def connect_known(self, timeout=8, passes=2, pause_between_passes=1.0):
+    def connect_known(self, timeout=8, passes=3, pause_between_passes=2.0):
         # The wifi radio often misses on the very first attempt after a cold
         # boot (association timing out, no probe response yet). One retry
         # pass covers that without doubling the wait when networks really

@@ -5,8 +5,13 @@ import digitalio
 
 DMX_CHANNELS = 512
 DATA_BAUDRATE = 250000
-BREAK_BAUDRATE = 83333
 FRAME_INTERVAL = 0.025
+
+# DMX break/MAB timing (spec: break >= 88us, MAB >= 8us). We stay well
+# above both to give slow receivers slack, and because CircuitPython's
+# time.sleep resolution isn't microsecond-tight anyway.
+BREAK_SECONDS = 0.00025  # 250us
+MAB_SECONDS = 0.00003    # 30us
 
 
 class DmxDriver:
@@ -21,11 +26,11 @@ class DmxDriver:
             self._direction = digitalio.DigitalInOut(dir_pin)
             self._direction.direction = digitalio.Direction.OUTPUT
             self._direction.value = True
-        # 8N2 stays fixed. To emit the DMX break we only toggle the
-        # baudrate: at BREAK_BAUDRATE a zero byte gives us 9 low bits
-        # (>= 88us) followed by 2 stop bits (MAB, >= 8us). Reusing the
-        # same UART instance avoids the driver install/uninstall churn
-        # that deinit+reinit at 40Hz used to cause on ESP32-S2.
+        self._uart = None
+        self._last_send = 0.0
+        self._open_uart()
+
+    def _open_uart(self):
         self._uart = busio.UART(
             tx=self._tx_pin,
             rx=None,
@@ -34,12 +39,21 @@ class DmxDriver:
             parity=None,
             stop=2,
         )
-        self._last_send = 0.0
 
     def send_frame(self):
-        self._uart.baudrate = BREAK_BAUDRATE
-        self._uart.write(b"\x00")
-        self._uart.baudrate = DATA_BAUDRATE
+        # Drive the break manually via digitalio: baudrate-switch was
+        # unreliable on ESP32-S2 because busio.UART.write returns before
+        # the FIFO drains, so the break byte would get shifted out at the
+        # new (higher) baudrate and end up below the 88us spec.
+        self._uart.deinit()
+        pin = digitalio.DigitalInOut(self._tx_pin)
+        pin.direction = digitalio.Direction.OUTPUT
+        pin.value = False       # break: hold TX low
+        time.sleep(BREAK_SECONDS)
+        pin.value = True        # MAB: idle high
+        time.sleep(MAB_SECONDS)
+        pin.deinit()
+        self._open_uart()
         self._uart.write(self.buffer)
 
     def refresh_if_due(self):
