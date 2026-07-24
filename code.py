@@ -1,57 +1,45 @@
+"""
+Minimal DMX transmit test. No wifi, no MQTT, no web, no serial console.
+Just an infinite loop that pushes a DMX frame with every channel at
+255 out of board.IO4 (GPIO4). If the par lights up, DMX + wiring work
+and something else in the main firmware is masking that. If not, the
+DMX driver, the pin, or the physical link is still broken.
+"""
+
+import time
 import board
-import microcontroller
-import socketpool
-import wifi
+import busio
+import digitalio
 
-from src import settings_store
-from src.devices import DeviceManager
-from src.dmx_driver import DmxDriver
-from src.mqtt_manager import MqttManager
-from src.serial_console import SerialConsole
-from src.web_server import WebServer
-from src.wifi_manager import WifiManager
+TX_PIN = board.IO4
+BAUD = 250000
+BREAK_S = 0.00025
+MAB_S = 0.00003
+CHANNELS = 512
 
-CONFIG_MODE_FLAG_INDEX = 1
+# All channels at 255 (start code = 0)
+buffer = bytearray(CHANNELS + 1)
+for i in range(1, CHANNELS + 1):
+    buffer[i] = 255
 
+uart = busio.UART(
+    tx=TX_PIN, rx=None, baudrate=BAUD, bits=8, parity=None, stop=2
+)
 
-def _in_config_mode():
-    try:
-        return microcontroller.nvm[CONFIG_MODE_FLAG_INDEX] == 1
-    except Exception:
-        return False
-
-
-def _resolve_pin(name):
-    return getattr(board, name)
-
-
-system_cfg = settings_store.load("system.json")
-_dir_pin = None
-if system_cfg.get("dmx_dir_pin_enabled"):
-    _dir_pin = _resolve_pin(system_cfg["dmx_dir_pin"])
-dmx_driver = DmxDriver(_resolve_pin(system_cfg["dmx_tx_pin"]), _dir_pin)
-device_manager = DeviceManager(dmx_driver)
-wifi_manager = WifiManager()
-mqtt_manager = MqttManager(device_manager)
-serial_console = SerialConsole(device_manager, wifi_manager, mqtt_manager)
-
-if _in_config_mode():
-    wifi_manager.start_ap(system_cfg["ap_ssid"], system_cfg["ap_password"], system_cfg["ap_ip"])
-else:
-    if not wifi_manager.connect_known():
-        wifi_manager.start_ap(
-            system_cfg["ap_ssid"], system_cfg["ap_password"], system_cfg["ap_ip"]
-        )
-
-pool = socketpool.SocketPool(wifi.radio)
-web_server = WebServer(pool, device_manager, wifi_manager, mqtt_manager, dmx_driver)
-web_server.start()
-
-if wifi_manager.mode == "sta":
-    mqtt_manager.start()
+print("DMX minimal test: TX=IO4, all channels = 255, refresh 40 Hz")
 
 while True:
-    web_server.poll()
-    mqtt_manager.loop()
-    dmx_driver.refresh_if_due()
-    serial_console.poll()
+    # Break via digitalio: deinit UART, drive pin low, then high, reinit.
+    uart.deinit()
+    pin = digitalio.DigitalInOut(TX_PIN)
+    pin.direction = digitalio.Direction.OUTPUT
+    pin.value = False
+    time.sleep(BREAK_S)
+    pin.value = True
+    time.sleep(MAB_S)
+    pin.deinit()
+    uart = busio.UART(
+        tx=TX_PIN, rx=None, baudrate=BAUD, bits=8, parity=None, stop=2
+    )
+    uart.write(buffer)
+    time.sleep(0.025)
