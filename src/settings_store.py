@@ -16,9 +16,9 @@ DEFAULTS = {
         "discovery_prefix": "homeassistant",
     },
     "system.json": {
-        "dmx_tx_pin": "D4",
+        "dmx_tx_pin": "IO4",
         "dmx_dir_pin_enabled": False,
-        "dmx_dir_pin": "D3",
+        "dmx_dir_pin": "IO18",
         "hostname": "ESP-DMX",
         "ap_ssid": "ESP-DMX",
         "ap_password": "DMX4ALL1",
