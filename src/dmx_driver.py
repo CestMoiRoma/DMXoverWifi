@@ -21,28 +21,25 @@ class DmxDriver:
             self._direction = digitalio.DigitalInOut(dir_pin)
             self._direction.direction = digitalio.Direction.OUTPUT
             self._direction.value = True
-        self._uart = None
-        self._last_send = 0.0
-        self._open_data_uart()
-
-    def _open_data_uart(self):
-        if self._uart is not None:
-            self._uart.deinit()
+        # 8N2 stays fixed. To emit the DMX break we only toggle the
+        # baudrate: at BREAK_BAUDRATE a zero byte gives us 9 low bits
+        # (>= 88us) followed by 2 stop bits (MAB, >= 8us). Reusing the
+        # same UART instance avoids the driver install/uninstall churn
+        # that deinit+reinit at 40Hz used to cause on ESP32-S2.
         self._uart = busio.UART(
-            tx=self._tx_pin, rx=None, baudrate=DATA_BAUDRATE, bits=8, parity=None, stop=2
+            tx=self._tx_pin,
+            rx=None,
+            baudrate=DATA_BAUDRATE,
+            bits=8,
+            parity=None,
+            stop=2,
         )
-
-    def _send_break(self):
-        self._uart.deinit()
-        break_uart = busio.UART(
-            tx=self._tx_pin, rx=None, baudrate=BREAK_BAUDRATE, bits=8, parity=None, stop=1
-        )
-        break_uart.write(b"\x00")
-        break_uart.deinit()
+        self._last_send = 0.0
 
     def send_frame(self):
-        self._send_break()
-        self._open_data_uart()
+        self._uart.baudrate = BREAK_BAUDRATE
+        self._uart.write(b"\x00")
+        self._uart.baudrate = DATA_BAUDRATE
         self._uart.write(self.buffer)
 
     def refresh_if_due(self):
