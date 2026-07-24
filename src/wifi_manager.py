@@ -37,13 +37,21 @@ class WifiManager:
             pass
         return results
 
-    def connect_known(self, timeout=8):
+    def connect_known(self, timeout=8, passes=2, pause_between_passes=1.0):
+        # The wifi radio often misses on the very first attempt after a cold
+        # boot (association timing out, no probe response yet). One retry
+        # pass covers that without doubling the wait when networks really
+        # aren't there.
+        import time as _time
         ordered = sorted(self.networks, key=lambda n: n.get("priority", 0), reverse=True)
-        for net in ordered:
-            if not net.get("ssid"):
-                continue
-            if self.try_connect(net["ssid"], net.get("password"), timeout=timeout):
-                return True
+        for attempt in range(passes):
+            for net in ordered:
+                if not net.get("ssid"):
+                    continue
+                if self.try_connect(net["ssid"], net.get("password"), timeout=timeout):
+                    return True
+            if attempt < passes - 1 and pause_between_passes:
+                _time.sleep(pause_between_passes)
         return False
 
     def try_connect(self, ssid, password, timeout=8):
