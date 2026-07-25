@@ -44,6 +44,8 @@ const ICON_GEAR = [
 ];
 const ICON_PLUS = ["M12 5v14", "M5 12h14"];
 const ICON_EXPORT = ["M12 19V5", "M5 12l7-7 7 7"];
+const ICON_SLIDERS = ["M4 6h16", "M4 12h16", "M4 18h16", "M9 4v4", "M15 10v4", "M7 16v4"];
+const ICON_WIDGET = ["M12 3a9 9 0 100 18 9 9 0 000-18z", "M12 8v8", "M8 12h8"];
 
 function iconButton(paths, title, onClick) {
   const btn = el("button", { type: "button", class: "icon-btn", title: title, "aria-label": title });
@@ -465,6 +467,19 @@ function deviceCard(device) {
   head.appendChild(title);
 
   const actions = el("div", { class: "card-actions" });
+  if (device.card === "ez" && device.ez && device.ez.kind) {
+    actions.appendChild(
+      iconButton(
+        litePeek.has(device.id) ? ICON_WIDGET : ICON_SLIDERS,
+        litePeek.has(device.id) ? "Back to the widget" : "Show the raw channels",
+        () => {
+          if (litePeek.has(device.id)) litePeek.delete(device.id);
+          else litePeek.add(device.id);
+          redrawDevices();
+        }
+      )
+    );
+  }
   actions.appendChild(
     iconButton(ICON_EXPORT, "Save as JSON", () => downloadFixture(device))
   );
@@ -520,17 +535,6 @@ function deviceCard(device) {
     device.channels.forEach((channel) => card.appendChild(channelControl(device, channel)));
   }
 
-  if (isEz) {
-    const toggle = el("button", { type: "button", class: "secondary small lite-toggle" }, [
-      peeking ? "Back to the widget" : "Show raw channels",
-    ]);
-    toggle.addEventListener("click", () => {
-      if (peeking) litePeek.delete(device.id);
-      else litePeek.add(device.id);
-      redrawDevices();
-    });
-    card.appendChild(toggle);
-  }
   return card;
 }
 
@@ -874,6 +878,18 @@ function percentRow(onPick) {
   return row;
 }
 
+// The same buttons stacked, highest at the top, so they read in the same
+// direction as the fader they sit beside.
+function percentColumn(onPick) {
+  const col = el("div", { class: "pct-col" });
+  PERCENTS.slice().reverse().forEach((pct) => {
+    const btn = el("button", { type: "button", class: "secondary small" }, [pct + "%"]);
+    btn.addEventListener("click", () => onPick(Math.round((pct * 255) / 100)));
+    col.appendChild(btn);
+  });
+  return col;
+}
+
 // States how many channels a control moves, when that is more than one. A
 // control that silently drives eight fixtures is a trap.
 function roleLabel(t, label, role) {
@@ -883,18 +899,22 @@ function roleLabel(t, label, role) {
 
 function roleFader(t, role, label, reversed) {
   if (!t.has(role)) return null;
-  const block = el("div", { class: "ez-block" });
   // A reversed channel is flipped on the way in and on the way out, so the
-  // fader reads left to right as slow to fast whichever way the fixture counts.
+  // fader reads bottom to top as slow to fast whichever way the fixture counts.
   const flip = (v) => (reversed ? 255 - v : v);
   const current = flip(t.get(role));
 
-  const head = el("div", { class: "ez-row" });
-  head.appendChild(el("label", {}, [roleLabel(t, label, role)]));
-  const input = el("input", { type: "range", min: "0", max: "255", value: String(current) });
+  const block = el("div", { class: "fader" });
+  block.appendChild(el("label", {}, [roleLabel(t, label, role)]));
+
+  const input = el("input", {
+    type: "range",
+    min: "0",
+    max: "255",
+    value: String(current),
+    class: "vfader",
+  });
   const out = el("span", { class: "ez-readout" }, [String(current)]);
-  head.appendChild(input);
-  head.appendChild(out);
 
   const paint = (value) => {
     input.value = String(value);
@@ -912,13 +932,15 @@ function roleFader(t, role, label, reversed) {
   });
   t.claim(role, state);
 
-  block.appendChild(head);
-  block.appendChild(
-    percentRow((value) => {
+  const body = el("div", { class: "fader-body" }, [
+    percentColumn((value) => {
       paint(value);
       t.send(role, flip(value), true);
-    })
-  );
+    }),
+    input,
+  ]);
+  block.appendChild(body);
+  block.appendChild(out);
   return block;
 }
 
@@ -1389,12 +1411,17 @@ function ezWidgets(t) {
   else if (kind === "smoke") parts.push(smokeControls(t));
   else if (kind === "motion") parts.push(motionPad(t));
 
-  // Shared optional roles, drawn only where they were claimed.
-  if (kind !== "dimmer") parts.push(roleFader(t, "dimmer", "Master dimmer"));
-  if (kind !== "strobe") parts.push(roleFader(t, "strobe", "Strobe"));
+  // Shared optional roles, drawn only where they were claimed. Faders go side
+  // by side in one row, which is both how a console looks and how several of
+  // them fit on a card without turning it into a column of sliders.
+  const faders = [];
+  if (kind !== "dimmer") faders.push(roleFader(t, "dimmer", "Master dimmer"));
+  if (kind !== "strobe") faders.push(roleFader(t, "strobe", "Strobe"));
   if (kind === "motion") {
-    parts.push(roleFader(t, "speed", "Movement speed", t.setting("reverse_speed", "") === "1"));
+    faders.push(roleFader(t, "speed", "Movement speed", t.setting("reverse_speed", "") === "1"));
   }
+  const present = faders.filter(Boolean);
+  if (present.length) parts.push(el("div", { class: "fader-row" }, present));
 
   return parts.filter(Boolean);
 }

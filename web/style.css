@@ -65,10 +65,11 @@ nav { display: flex; gap: 0.5rem; flex-wrap: wrap; }
 
 /* -- layout -- */
 
-/* Wide enough that the sort column does not squeeze the fixtures. The settings
-   forms stay narrow on their own, since a text field a thousand pixels wide is
-   harder to read, not easier. */
-main { padding: 1.25rem; max-width: 960px; margin: 0 auto; }
+/* The control pages use the whole window with the filter column pinned to the
+   left edge. Settings is the exception and stays a readable column: a text
+   field a thousand pixels wide is harder to read, not easier. */
+main { padding: 1.25rem; }
+#view-settings { max-width: 900px; margin: 0 auto; }
 #view-settings .section { max-width: 640px; }
 
 .view { display: none; }
@@ -444,10 +445,21 @@ form { margin: 0; }
 
 .devices-layout {
   display: grid;
-  grid-template-columns: 13rem 1fr;
+  grid-template-columns: 14rem minmax(0, 1fr);
   gap: 1.25rem;
   align-items: start;
 }
+
+/* Cards flow into as many columns as the window allows rather than one very
+   wide card per row, which is unreadable on a monitor and wasteful on a laptop. */
+.device-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(22rem, 1fr));
+  gap: 0.75rem;
+  align-items: start;
+}
+.device-grid > .empty { grid-column: 1 / -1; }
+.device-card { margin-bottom: 0; }
 
 .sidebar {
   position: sticky;
@@ -637,3 +649,33 @@ button.danger:hover { background: #b91c1c; border-color: #b91c1c; }
   margin-top: 0.5rem;
   padding-right: 0.3rem;
 }
+
+/* -- vertical faders -- */
+
+.fader-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  justify-content: center;
+  margin-top: 0.75rem;
+}
+
+.fader { display: flex; flex-direction: column; align-items: center; gap: 0.35rem; }
+.fader > label { font-size: 0.8rem; color: var(--muted); text-align: center; }
+.fader-body { display: flex; align-items: stretch; gap: 0.5rem; }
+.fader .ez-readout { font-variant-numeric: tabular-nums; }
+
+.pct-col { display: flex; flex-direction: column; justify-content: space-between; gap: 0.15rem; }
+.pct-col button { padding: 0.1rem 0.35rem; font-size: 0.7rem; }
+
+/* A range turned on its side. The rtl direction puts the maximum at the top,
+   so it matches the percentage column beside it and how a console reads. */
+.vfader {
+  writing-mode: vertical-lr;
+  direction: rtl;
+  width: 1.75rem;
+  height: 9.5rem;
+  padding: 0;
+}
+
+.whites { writing-mode: vertical-lr; direction: rtl; width: 2rem; height: 9.5rem; }
