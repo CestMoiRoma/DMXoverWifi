@@ -232,8 +232,31 @@ def devices_from_env(cfg, labels):
                 "name": channel.get("name", "Channel %d" % i),
                 "type": channel.get("type", "slider"),
             })
+        # EZ cards: DEVICE_n_CARD, DEVICE_n_EZ_KIND, DEVICE_n_EZ_MODE, plus one
+        # key per role and per setting. Presets are deliberately not seeded:
+        # they are made live and belong to the .json backup, and spelling a
+        # colour out across four keys would bury the readable part of this file.
+        ez = None
+        if group.get("card") == "ez" or group.get("ez_kind"):
+            roles = {}
+            settings = {}
+            for key, value in group.items():
+                if key.startswith("ez_role_"):
+                    roles[key[len("ez_role_"):]] = as_int(value)
+                elif key.startswith("ez_set_"):
+                    settings[key[len("ez_set_"):]] = value
+            ez = {
+                "kind": group.get("ez_kind", ""),
+                "mode": group.get("ez_mode", ""),
+                "roles": roles,
+                "settings": settings,
+                "presets": [],
+            }
+
         devices.append({
             "id": "dev-env%s" % dev_n,
+            "card": "ez" if ez else "lite",
+            "ez": ez or {},
             "name": group["name"],
             # Unknown ids are left as written: the firmware normalises them to
             # "other" on load, and doing it here too would hide the typo.

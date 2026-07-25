@@ -625,6 +625,25 @@ String DmxWebServer::buildEnvText() {
         labelNames += l->name;
       }
       if (labelNames.length()) out += "DEVICE_" + String(i) + "_LABELS=" + labelNames + "\n";
+
+      // EZ cards. Presets are left out on purpose: they are a live thing, they
+      // belong to the .json backup, and spelling colours out across four keys
+      // each would bury the readable part of this file.
+      if (String((const char*)(dev["card"] | "lite")) == "ez") {
+        String p = "DEVICE_" + String(i);
+        out += p + "_CARD=ez\n";
+        out += p + "_EZ_KIND=" + (const char*)(dev["ez"]["kind"] | "") + "\n";
+        String mode = (const char*)(dev["ez"]["mode"] | "");
+        if (mode.length()) out += p + "_EZ_MODE=" + mode + "\n";
+        for (JsonPairConst role : dev["ez"]["roles"].as<JsonObjectConst>()) {
+          out += p + "_EZ_ROLE_" + String(role.key().c_str()) + "=" +
+                 String(role.value().as<int>()) + "\n";
+        }
+        for (JsonPairConst s : dev["ez"]["settings"].as<JsonObjectConst>()) {
+          String value = s.value().as<const char*>() ? s.value().as<const char*>() : "";
+          if (value.length()) out += p + "_EZ_SET_" + String(s.key().c_str()) + "=" + value + "\n";
+        }
+      }
       int j = 1;
       for (JsonObjectConst ch : dev["channels"].as<JsonArrayConst>()) {
         String p = "DEVICE_" + String(i) + "_CHANNEL_" + String(j);
