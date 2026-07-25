@@ -415,7 +415,13 @@ function deviceCard(device) {
   actions.appendChild(
     iconButton(ICON_EXPORT, "Save as JSON", () => downloadFixture(device))
   );
-  actions.appendChild(iconButton(ICON_GEAR, "Edit", () => openDeviceModal(device, device.id)));
+  // An EZ fixture edits through the role dialog it was built with; a lite one
+  // through the plain channel list.
+  actions.appendChild(
+    iconButton(ICON_GEAR, "Edit", () =>
+      device.card === "ez" ? openEzModal(device, device.start_channel) : openDeviceModal(device, device.id)
+    )
+  );
   actions.appendChild(
     iconButton(ICON_PLUS, "Duplicate", () => {
       const span = device.channels.reduce((max, c) => Math.max(max, c.offset), 1);
@@ -514,6 +520,135 @@ document.getElementById("sidebar-toggle").addEventListener("click", () => {
   document.getElementById("device-sidebar").classList.toggle("open");
 });
 
+// ---- EZ control kinds ----
+//
+// One table describing what each kind asks for and, by consequence, what its
+// card can draw. Optional roles left blank at creation stay unbound, and the
+// card simply does not grow that part: nothing is ever written to a channel the
+// fixture never claimed.
+
+const EZ_KINDS = {
+  dimmer: {
+    label: "Dimmer",
+    category: "dimmer",
+    roles: [{ key: "level", label: "Level", required: true }],
+  },
+  strobe: {
+    label: "Strobe",
+    category: "strobe",
+    roles: [{ key: "strobe", label: "Strobe", required: true }],
+  },
+  mono: {
+    label: "Light, single colour",
+    category: "par",
+    roles: [
+      { key: "level", label: "Light", required: true },
+      { key: "strobe", label: "Strobe", required: false },
+    ],
+  },
+  rgb: {
+    label: "Light, RGB",
+    category: "par",
+    roles: [
+      { key: "red", label: "Red", required: true },
+      { key: "green", label: "Green", required: true },
+      { key: "blue", label: "Blue", required: true },
+      { key: "dimmer", label: "Master dimmer", required: false },
+      { key: "strobe", label: "Strobe", required: false },
+    ],
+  },
+  rgbw: {
+    label: "Light, RGBW",
+    category: "par",
+    roles: [
+      { key: "red", label: "Red", required: true },
+      { key: "green", label: "Green", required: true },
+      { key: "blue", label: "Blue", required: true },
+      { key: "white", label: "White", required: true },
+      { key: "dimmer", label: "Master dimmer", required: false },
+      { key: "strobe", label: "Strobe", required: false },
+    ],
+  },
+  cwww: {
+    label: "Light, cold and warm white",
+    category: "par",
+    roles: [
+      { key: "warm", label: "Warm white", required: true },
+      { key: "cold", label: "Cold white", required: true },
+      { key: "dimmer", label: "Master dimmer", required: false },
+      { key: "strobe", label: "Strobe", required: false },
+    ],
+  },
+  smoke: {
+    label: "Smoke machine",
+    category: "smoke",
+    roles: [{ key: "output", label: "Output", required: true }],
+    options: [
+      {
+        key: "mode",
+        label: "Control",
+        type: "select",
+        choices: [
+          ["onoff", "On and off only"],
+          ["slider", "Variable pump"],
+        ],
+        default: "onoff",
+      },
+      {
+        key: "auto_off_s",
+        label: "Auto-off after (seconds, 0 to disable)",
+        type: "number",
+        default: "0",
+        hint: "Closes a machine left on. Bursts are always capped at 30 s by the board.",
+      },
+    ],
+  },
+  motion: {
+    label: "Motion, pan and tilt",
+    category: "lyre",
+    roles: [
+      { key: "horizontal", label: "Horizontal", required: true },
+      { key: "vertical", label: "Vertical", required: true },
+      { key: "horizontal_fine", label: "Horizontal fine", required: false },
+      { key: "vertical_fine", label: "Vertical fine", required: false },
+      { key: "speed", label: "Movement speed", required: false },
+    ],
+    options: [
+      { key: "invert_h", label: "Invert horizontal", type: "checkbox", default: "" },
+      { key: "invert_v", label: "Invert vertical", type: "checkbox", default: "" },
+      {
+        key: "max_step",
+        label: "Fastest step at full deflection",
+        type: "number",
+        default: "10",
+        hint: "A small push always steps by one; this is what a full push reaches.",
+      },
+      {
+        key: "fine_mode",
+        label: "Fine tune mode",
+        type: "select",
+        choices: [
+          ["both", "Controls movement and fine tune"],
+          ["fine", "Fine tune only"],
+        ],
+        default: "both",
+      },
+    ],
+  },
+};
+
+function ezRoleOffset(device, role) {
+  const roles = (device.ez && device.ez.roles) || {};
+  const offset = roles[role];
+  return typeof offset === "number" && offset > 0 ? offset : null;
+}
+
+function ezSetting(device, key, fallback) {
+  const settings = (device.ez && device.ez.settings) || {};
+  const value = settings[key];
+  return value === undefined || value === "" ? fallback : value;
+}
+
 // ---- device modal: create, edit and duplicate ----
 
 let editingDeviceId = null;
@@ -606,23 +741,287 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && !document.getElementById("device-modal").hidden) closeDeviceModal();
 });
 
-document.getElementById("add-device-fab").addEventListener("click", async () => {
-  labelsCache = await api("/api/labels");
-  if (categoriesCache.length === 0) categoriesCache = await api("/api/categories");
+// ---- the three ways to get a fixture ----
+
+function closeChoiceModal() {
+  document.getElementById("choice-modal").hidden = true;
+  document.getElementById("choice-status").textContent = "";
+}
+
+document.querySelectorAll("#choice-modal [data-close-choice]").forEach((node) => {
+  node.addEventListener("click", closeChoiceModal);
+});
+
+document.getElementById("choice-lite").addEventListener("click", async () => {
+  closeChoiceModal();
+  openDeviceModal(
+    { name: "", category: "other", start_channel: await nextFreeStart(), channels: [], labels: [] },
+    null
+  );
+});
+
+document.getElementById("choice-ez").addEventListener("click", async () => {
+  closeChoiceModal();
+  openEzModal(null, await nextFreeStart());
+});
+
+document.getElementById("choice-restore").addEventListener("click", () => {
+  document.getElementById("fixture-file").click();
+});
+
+document.getElementById("fixture-file").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  const status = document.getElementById("choice-status");
+  if (!file) return;
+  try {
+    const fixture = JSON.parse(await file.text());
+    if (!fixture || !Array.isArray(fixture.channels)) {
+      throw new Error("that file has no channel list, so it is not a fixture");
+    }
+    delete fixture.id;  // never trust an id from a file; the board mints one
+    // Landing it past everything already patched, rather than on whatever
+    // address it happened to be saved from, which is very likely taken.
+    fixture.start_channel = await nextFreeStart();
+    await api("/api/devices", "POST", fixture);
+    closeChoiceModal();
+    renderDevices();
+  } catch (err) {
+    status.textContent = "Could not restore that file: " + err.message;
+  }
+  e.target.value = "";
+});
+
+// Past the end of everything already patched, so a new fixture does not
+// silently share addresses with an existing one.
+async function nextFreeStart() {
   const devices = await api("/api/devices");
-  // Land past the end of everything already patched, so a new fixture does not
-  // silently share addresses with an existing one.
   let next = 1;
   devices.forEach((d) => {
     const span = d.channels.reduce((max, c) => Math.max(max, c.offset), 0);
     next = Math.max(next, d.start_channel + span);
   });
-  openDeviceModal(
-    { name: "", category: "other", start_channel: Math.min(next, 512), channels: [], labels: [] },
-    null
-  );
-  document.getElementById("device-form").name.value = "";
+  return Math.min(next, 512);
+}
+
+document.getElementById("add-device-fab").addEventListener("click", async () => {
+  labelsCache = await api("/api/labels");
+  if (categoriesCache.length === 0) categoriesCache = await api("/api/categories");
+  document.getElementById("choice-modal").hidden = false;
 });
+
+// ---- EZ creation and editing ----
+
+let editingEzId = null;
+let ezLabels = new Set();
+
+function openEzModal(device, startChannel) {
+  const form = document.getElementById("ez-form");
+  editingEzId = device ? device.id : null;
+  ezLabels = new Set((device && device.labels) || []);
+
+  const kindSelect = document.getElementById("ez-kind");
+  kindSelect.innerHTML = "";
+  Object.keys(EZ_KINDS).forEach((key) => {
+    kindSelect.appendChild(el("option", { value: key }, [EZ_KINDS[key].label]));
+  });
+  kindSelect.value = (device && device.ez && device.ez.kind) || "rgb";
+
+  const catSelect = document.getElementById("ez-category");
+  catSelect.innerHTML = "";
+  categoriesCache.forEach((c) => catSelect.appendChild(el("option", { value: c.id }, [c.name])));
+
+  form.name.value = device ? device.name : "";
+  form.start_channel.value = device ? device.start_channel : startChannel;
+  document.getElementById("ez-title").textContent = device ? "Edit EZ device" : "New EZ device";
+  document.getElementById("ez-submit").textContent = device ? "Save changes" : "Create device";
+
+  renderEzKind(device);
+  renderEzLabelPicker();
+  document.getElementById("ez-error").hidden = true;
+  document.getElementById("ez-modal").hidden = false;
+  form.name.focus();
+}
+
+function renderEzKind(device) {
+  const kind = document.getElementById("ez-kind").value;
+  const spec = EZ_KINDS[kind];
+  const catSelect = document.getElementById("ez-category");
+  // Only steer the category on a fresh fixture; an edit keeps what was chosen.
+  if (!device) catSelect.value = spec.category;
+  else catSelect.value = device.category || spec.category;
+
+  document.getElementById("ez-roles-hint").textContent =
+    "Offsets within the fixture, counted from its start channel. Leave an optional one blank to drop it from the card.";
+
+  const rolesBox = document.getElementById("ez-roles");
+  rolesBox.innerHTML = "";
+  spec.roles.forEach((role) => {
+    const row = el("div", { class: "role-row" });
+    row.appendChild(
+      el("label", { for: "ez-role-" + role.key }, [
+        role.label,
+        role.required ? "" : el("span", { class: "hint" }, ["optional"]),
+      ])
+    );
+    const existing = device ? ezRoleOffset(device, role.key) : null;
+    row.appendChild(
+      el("input", {
+        type: "number",
+        min: "1",
+        max: "512",
+        id: "ez-role-" + role.key,
+        "data-role": role.key,
+        "data-required": role.required ? "1" : "",
+        value: existing === null ? "" : String(existing),
+        class: "ez-role",
+      })
+    );
+    rolesBox.appendChild(row);
+  });
+
+  const optionsBox = document.getElementById("ez-options");
+  optionsBox.innerHTML = "";
+  (spec.options || []).forEach((opt) => {
+    const current = device ? ezSetting(device, opt.key, opt.default) : opt.default;
+    const field = el("div", { class: opt.type === "checkbox" ? "field field-inline" : "field" });
+    let input;
+    if (opt.type === "select") {
+      input = el("select", { id: "ez-opt-" + opt.key, "data-opt": opt.key });
+      opt.choices.forEach((c) => input.appendChild(el("option", { value: c[0] }, [c[1]])));
+      input.value = current;
+    } else if (opt.type === "checkbox") {
+      input = el("input", { type: "checkbox", id: "ez-opt-" + opt.key, "data-opt": opt.key });
+      input.checked = current === "1";
+    } else {
+      input = el("input", {
+        type: "number",
+        id: "ez-opt-" + opt.key,
+        "data-opt": opt.key,
+        value: String(current),
+      });
+    }
+    const label = el("label", { for: "ez-opt-" + opt.key }, [opt.label]);
+    if (opt.type === "checkbox") {
+      field.appendChild(input);
+      field.appendChild(label);
+    } else {
+      field.appendChild(label);
+      field.appendChild(input);
+      if (opt.hint) field.appendChild(el("span", { class: "hint" }, [opt.hint]));
+    }
+    optionsBox.appendChild(field);
+  });
+}
+
+document.getElementById("ez-kind").addEventListener("change", () => renderEzKind(null));
+
+function renderEzLabelPicker() {
+  const picker = document.getElementById("ez-labels");
+  picker.innerHTML = "";
+  if (labelsCache.length === 0) {
+    picker.appendChild(el("span", { class: "hint" }, ["No labels yet."]));
+    return;
+  }
+  labelsCache.forEach((label) => {
+    const on = ezLabels.has(label.id);
+    const chip = el("button", { type: "button", class: "chip" + (on ? " on" : "") }, [label.name]);
+    chip.style.setProperty("--chip", label.color);
+    chip.addEventListener("click", () => {
+      if (ezLabels.has(label.id)) ezLabels.delete(label.id);
+      else ezLabels.add(label.id);
+      renderEzLabelPicker();
+    });
+    picker.appendChild(chip);
+  });
+}
+
+function closeEzModal() {
+  document.getElementById("ez-modal").hidden = true;
+  editingEzId = null;
+}
+
+document.querySelectorAll("#ez-modal [data-close-ez]").forEach((node) => {
+  node.addEventListener("click", closeEzModal);
+});
+
+// Reads the role inputs and refuses anything a card could not draw. Cancel
+// still works: the block is on saving a broken fixture, not on changing your
+// mind about making one.
+function collectEzRoles() {
+  const roles = {};
+  const seen = new Map();
+  let error = "";
+  document.querySelectorAll("#ez-roles .ez-role").forEach((input) => {
+    const key = input.dataset.role;
+    const raw = input.value.trim();
+    if (!raw) {
+      if (input.dataset.required) error = error || "Every required channel needs an offset.";
+      return;
+    }
+    const offset = parseInt(raw, 10);
+    if (!(offset >= 1 && offset <= 512)) {
+      error = error || "Offsets must be between 1 and 512.";
+      return;
+    }
+    if (seen.has(offset)) {
+      error =
+        error ||
+        "Two roles point at offset " + offset + ": " + seen.get(offset) + " and " + key + ".";
+      return;
+    }
+    seen.set(offset, key);
+    roles[key] = offset;
+  });
+  return { roles: roles, error: error };
+}
+
+document.getElementById("ez-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const kind = document.getElementById("ez-kind").value;
+  const spec = EZ_KINDS[kind];
+  const collected = collectEzRoles();
+  const errorBox = document.getElementById("ez-error");
+
+  if (collected.error) {
+    errorBox.textContent = collected.error;
+    errorBox.hidden = false;
+    return;
+  }
+  errorBox.hidden = true;
+
+  const settings = {};
+  document.querySelectorAll("#ez-options [data-opt]").forEach((input) => {
+    settings[input.dataset.opt] = input.type === "checkbox" ? (input.checked ? "1" : "") : input.value;
+  });
+
+  // An EZ fixture is a normal fixture underneath: one plain channel per bound
+  // role, so MQTT, the serial console and the lite view all keep working
+  // against it without knowing what a colour wheel is.
+  const channels = spec.roles
+    .filter((role) => collected.roles[role.key])
+    .map((role) => ({
+      offset: collected.roles[role.key],
+      name: role.label,
+      type: "slider",
+    }));
+
+  const payload = {
+    name: form.name.value,
+    category: document.getElementById("ez-category").value,
+    card: "ez",
+    start_channel: parseInt(form.start_channel.value, 10),
+    channels: channels,
+    labels: Array.from(ezLabels),
+    ez: { kind: kind, mode: settings.mode || "", roles: collected.roles, settings: settings },
+  };
+
+  if (editingEzId) await api("/api/devices/" + editingEzId, "PUT", payload);
+  else await api("/api/devices", "POST", payload);
+  closeEzModal();
+  renderDevices();
+});
+
 
 document.getElementById("device-form").addEventListener("submit", async (e) => {
   e.preventDefault();

@@ -36,6 +36,18 @@ static EzConfig ezFromJson(JsonObjectConst e) {
   for (JsonPairConst kv : e["roles"].as<JsonObjectConst>()) {
     ez.roles.push_back(std::make_pair(String(kv.key().c_str()), kv.value().as<int>()));
   }
+  for (JsonPairConst kv : e["settings"].as<JsonObjectConst>()) {
+    ez.settings.push_back(std::make_pair(String(kv.key().c_str()), String(kv.value().as<const char*>() ? kv.value().as<const char*>() : "")));
+  }
+  for (JsonObjectConst p : e["presets"].as<JsonArrayConst>()) {
+    if (ez.presets.size() >= MAX_EZ_PRESETS) break;
+    EzPreset preset;
+    preset.name = (const char*)(p["name"] | "Preset");
+    for (JsonPairConst kv : p["values"].as<JsonObjectConst>()) {
+      preset.values.push_back(std::make_pair(String(kv.key().c_str()), kv.value().as<int>()));
+    }
+    ez.presets.push_back(preset);
+  }
   return ez;
 }
 
@@ -44,6 +56,15 @@ static void ezToJson(const EzConfig& ez, JsonObject out) {
   out["mode"] = ez.mode;
   JsonObject roles = out["roles"].to<JsonObject>();
   for (const auto& role : ez.roles) roles[role.first] = role.second;
+  JsonObject settings = out["settings"].to<JsonObject>();
+  for (const auto& s : ez.settings) settings[s.first] = s.second;
+  JsonArray presets = out["presets"].to<JsonArray>();
+  for (const EzPreset& p : ez.presets) {
+    JsonObject po = presets.add<JsonObject>();
+    po["name"] = p.name;
+    JsonObject values = po["values"].to<JsonObject>();
+    for (const auto& v : p.values) values[v.first] = v.second;
+  }
 }
 
 static Device deviceFromJson(JsonObjectConst d) {

@@ -413,6 +413,82 @@
   <span class="fab-label">New device</span>
 </button>
 
+<!-- What the + button opens: three ways to get a fixture. -->
+<div id="choice-modal" class="modal" hidden>
+  <div class="modal-backdrop" data-close-choice></div>
+  <div class="modal-box narrow" role="dialog" aria-modal="true" aria-labelledby="choice-title">
+    <div class="modal-head">
+      <h2 id="choice-title">New device</h2>
+      <button type="button" class="icon-btn" data-close-choice aria-label="Close">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="choice-list">
+      <button type="button" class="choice" id="choice-lite">
+        <strong>New Device Lite</strong>
+        <span>One control per channel. Full control, nothing assumed.</span>
+      </button>
+      <button type="button" class="choice" id="choice-ez">
+        <strong>New Device EZ Control</strong>
+        <span>Name what each channel does and get a purpose-built widget.</span>
+      </button>
+      <button type="button" class="choice" id="choice-restore">
+        <strong>Restore from JSON</strong>
+        <span>Load a fixture saved earlier with the arrow on its card.</span>
+      </button>
+      <input type="file" id="fixture-file" accept=".json,application/json" hidden>
+    </div>
+    <p id="choice-status" class="hint"></p>
+  </div>
+</div>
+
+<!-- EZ fixture creation and editing. -->
+<div id="ez-modal" class="modal" hidden>
+  <div class="modal-backdrop" data-close-ez></div>
+  <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="ez-title">
+    <div class="modal-head">
+      <h2 id="ez-title">New EZ device</h2>
+      <button type="button" class="icon-btn" data-close-ez aria-label="Close">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <form id="ez-form" class="form-stacked">
+      <div class="field">
+        <label for="ez-name">Name</label>
+        <input type="text" id="ez-name" name="name" required>
+      </div>
+      <div class="field">
+        <label for="ez-kind">Control type</label>
+        <select id="ez-kind" name="kind"></select>
+      </div>
+      <div class="field">
+        <label for="ez-category">Category</label>
+        <select id="ez-category" name="category"></select>
+      </div>
+      <div class="field">
+        <label for="ez-start">Start channel</label>
+        <input type="number" id="ez-start" name="start_channel" min="1" max="512" required>
+        <span class="hint">The fixture's own DMX address, as set on the projector.</span>
+      </div>
+      <div class="field">
+        <label>Labels</label>
+        <div id="ez-labels" class="chip-bar picker"></div>
+      </div>
+      <div class="channels-block">
+        <div class="channels-block-header"><span>Channels</span></div>
+        <p class="hint" id="ez-roles-hint"></p>
+        <div id="ez-roles"></div>
+      </div>
+      <div id="ez-options"></div>
+      <p id="ez-error" class="form-error" hidden></p>
+      <div class="form-actions">
+        <button type="button" class="secondary" data-close-ez>Cancel</button>
+        <button type="submit" id="ez-submit">Create device</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <!-- Per-network settings, opened from the gear on each saved network. -->
 <div id="wifi-modal" class="modal" hidden>
   <div class="modal-backdrop" data-close-wifi></div>

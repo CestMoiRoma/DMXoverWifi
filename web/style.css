@@ -485,3 +485,44 @@ form { margin: 0; }
   letter-spacing: 0.04em;
   vertical-align: middle;
 }
+
+/* -- the three-way new-device chooser -- */
+
+.modal-box.narrow { max-width: 420px; }
+
+.choice-list { display: flex; flex-direction: column; gap: 0.5rem; }
+
+.choice {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.8rem 0.9rem;
+  text-align: left;
+  background: transparent;
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.choice:hover { border-color: var(--accent); }
+.choice span { font-size: 0.85rem; color: var(--muted); }
+
+/* -- EZ role editor -- */
+
+.role-row {
+  display: grid;
+  grid-template-columns: 1fr 6rem;
+  gap: 0.5rem;
+  align-items: center;
+  margin-top: 0.4rem;
+}
+.role-row > label { font-size: 0.9rem; }
+
+.form-error {
+  margin: 0;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid #dc2626;
+  border-radius: 5px;
+  color: #dc2626;
+  font-size: 0.9rem;
+}

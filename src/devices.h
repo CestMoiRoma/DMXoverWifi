@@ -22,13 +22,31 @@ struct Channel {
 // without interpreting it: the UI decides what a colour wheel does with the
 // roles, while the board keeps dealing in plain channels so MQTT, the serial
 // console and the raw API carry on working unchanged.
+// A named capture of what a card was showing: a colour on a light card, a
+// position on a motion card, the same thing underneath. Values are keyed by
+// role, so a preset survives the fixture being readdressed.
+struct EzPreset {
+  String name;
+  std::vector<std::pair<String, int>> values;  // role name -> 0..255
+};
+
 struct EzConfig {
-  String kind;  // "" for none, else mono, rgb, rgbw, cwww, smoke, motion
+  String kind;  // "" for none, else dimmer, strobe, mono, rgb, rgbw, cwww, smoke, motion
   String mode;  // smoke: "onoff" or "slider"
   std::vector<std::pair<String, int>> roles;  // role name -> channel offset
+  // Per-card knobs the UI defines and interprets: joystick inversion, maximum
+  // step, the smoke auto-off, the fine-tune mode. Deliberately untyped here so
+  // a new widget setting does not need a firmware change to be stored.
+  std::vector<std::pair<String, String>> settings;
+  std::vector<EzPreset> presets;
 
   bool empty() const { return kind.length() == 0; }
 };
+
+// Bounded because the whole config goes out on every read of /api/devices, and
+// an unbounded list on a dozen fixtures would make that response the slowest
+// thing the board does.
+static const size_t MAX_EZ_PRESETS = 12;
 
 // A named group of channels mapped onto a contiguous DMX address range starting
 // at start_channel. `labels` holds LabelStore ids, and a fixture may carry
