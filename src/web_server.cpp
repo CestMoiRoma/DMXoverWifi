@@ -184,6 +184,14 @@ void DmxWebServer::registerRoutes() {
   });
   onApi(UriBraces("/api/devices/{}"), HTTP_DELETE, [this]() {
     bool ok = _devices.removeDevice(_server.pathArg(0));
+    if (ok) {
+      // Its channels have just ceased to exist, so drop the scene steps and
+      // group members that pointed at them rather than leaving dead references
+      // to trip over later.
+      _scenes.forgetMissing(_devices);
+      _groups.forgetMissing(_devices);
+      _mqtt.publishDiscovery();
+    }
     JsonDocument out;
     out["ok"] = ok;
     sendJson(200, out);
@@ -201,6 +209,98 @@ void DmxWebServer::registerRoutes() {
     }
     _mqtt.publishState(id, offset, value);
     JsonDocument out;
+    out["ok"] = true;
+    sendJson(200, out);
+  });
+
+  // -- scenes --
+  onApi("/api/scenes", HTTP_GET, [this]() {
+    JsonDocument doc;
+    _scenes.scenesToJson(doc.to<JsonArray>());
+    sendJson(200, doc);
+  });
+  onApi("/api/scenes", HTTP_POST, [this]() {
+    JsonDocument body;
+    parseBody(body);
+    Scene* s = _scenes.addFromJson(body.as<JsonObjectConst>());
+    _mqtt.publishDiscovery();
+    JsonDocument out;
+    _scenes.sceneToJson(*s, out.to<JsonObject>());
+    sendJson(200, out);
+  });
+  onApi(UriBraces("/api/scenes/{}"), HTTP_PUT, [this]() {
+    JsonDocument body;
+    parseBody(body);
+    Scene* s = _scenes.update(_server.pathArg(0), body.as<JsonObjectConst>());
+    if (!s) {
+      sendError(404, "not found");
+      return;
+    }
+    _mqtt.publishDiscovery();
+    JsonDocument out;
+    _scenes.sceneToJson(*s, out.to<JsonObject>());
+    sendJson(200, out);
+  });
+  onApi(UriBraces("/api/scenes/{}"), HTTP_DELETE, [this]() {
+    bool ok = _scenes.remove(_server.pathArg(0));
+    _mqtt.publishDiscovery();
+    JsonDocument out;
+    out["ok"] = ok;
+    sendJson(200, out);
+  });
+  onApi(UriBraces("/api/scenes/{}/play"), HTTP_POST, [this]() {
+    JsonDocument out;
+    JsonArray missing = out["missing"].to<JsonArray>();
+    if (!_scenes.play(_server.pathArg(0), _devices, missing)) {
+      sendError(404, "not found");
+      return;
+    }
+    out["ok"] = true;
+    sendJson(200, out);
+  });
+
+  // -- groups --
+  onApi("/api/groups", HTTP_GET, [this]() {
+    JsonDocument doc;
+    _groups.groupsToJson(doc.to<JsonArray>());
+    sendJson(200, doc);
+  });
+  onApi("/api/groups", HTTP_POST, [this]() {
+    JsonDocument body;
+    parseBody(body);
+    Group* g = _groups.addFromJson(body.as<JsonObjectConst>());
+    JsonDocument out;
+    _groups.groupToJson(*g, out.to<JsonObject>());
+    sendJson(200, out);
+  });
+  onApi(UriBraces("/api/groups/{}"), HTTP_PUT, [this]() {
+    JsonDocument body;
+    parseBody(body);
+    Group* g = _groups.update(_server.pathArg(0), body.as<JsonObjectConst>());
+    if (!g) {
+      sendError(404, "not found");
+      return;
+    }
+    JsonDocument out;
+    _groups.groupToJson(*g, out.to<JsonObject>());
+    sendJson(200, out);
+  });
+  onApi(UriBraces("/api/groups/{}"), HTTP_DELETE, [this]() {
+    bool ok = _groups.remove(_server.pathArg(0));
+    JsonDocument out;
+    out["ok"] = ok;
+    sendJson(200, out);
+  });
+  onApi(UriBraces("/api/groups/{}/apply"), HTTP_POST, [this]() {
+    JsonDocument body;
+    parseBody(body);
+    JsonDocument out;
+    JsonArray missing = out["missing"].to<JsonArray>();
+    if (!_groups.apply(_server.pathArg(0), String((const char*)(body["role"] | "")),
+                       body["value"] | 0, _devices, missing)) {
+      sendError(404, "not found");
+      return;
+    }
     out["ok"] = true;
     sendJson(200, out);
   });
@@ -516,6 +616,8 @@ void DmxWebServer::buildConfigJson(JsonDocument& out) {
   _mqtt.copyConfigTo(out["mqtt"].to<JsonObject>());
   _labels.labelsToJson(out["labels"].to<JsonArray>());
   _devices.devicesToJson(out["devices"].to<JsonArray>());
+  _scenes.scenesToJson(out["scenes"].to<JsonArray>());
+  _groups.groupsToJson(out["groups"].to<JsonArray>());
 }
 
 // Merges one object section over what is already stored, so a partial config
@@ -551,6 +653,9 @@ void DmxWebServer::applyConfigJson(JsonObjectConst in) {
     _devices.replaceAll(in["devices"].as<JsonArrayConst>());
     _mqtt.publishDiscovery();
   }
+  // After the devices, since both point into them by channel uid.
+  if (in["scenes"].is<JsonArrayConst>()) _scenes.replaceAll(in["scenes"].as<JsonArrayConst>());
+  if (in["groups"].is<JsonArrayConst>()) _groups.replaceAll(in["groups"].as<JsonArrayConst>());
 }
 
 // ---- .env export ----

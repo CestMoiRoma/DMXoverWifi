@@ -3,12 +3,14 @@
 
 #include "config.h"
 #include "devices.h"
+#include "groups.h"
 #include "dmx/dmx_driver.h"
 #include "ethernet_manager.h"
 #include "labels.h"
 #include "modules.h"
 #include "mqtt_manager.h"
 #include "save_guard.h"
+#include "scenes.h"
 #include "serial_console.h"
 #include "settings_store.h"
 #include "version.h"
@@ -21,12 +23,14 @@ static DeviceManager deviceManager(dmx);
 static LabelStore labelStore;
 static ModuleSettings modules;
 static SaveGuard saveGuard;
+static SceneStore sceneStore;
+static GroupStore groupStore;
 static WifiManager wifiManager;
 static EthernetManager ethernet;
 static MqttManager mqttManager(deviceManager);
 static WsServer wsServer(deviceManager, modules);
 static DmxWebServer webServer(deviceManager, labelStore, modules, wifiManager, ethernet,
-                              mqttManager, saveGuard);
+                              mqttManager, saveGuard, sceneStore, groupStore);
 static SerialConsole serialConsole(deviceManager, labelStore, wifiManager, mqttManager);
 
 void setup() {
@@ -46,6 +50,8 @@ void setup() {
 
   deviceManager.begin();
   labelStore.begin();
+  sceneStore.begin();
+  groupStore.begin();
   // After the driver exists, so the stored look can be put straight back.
   saveGuard.begin(dmx);
   modules.begin();

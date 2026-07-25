@@ -13,11 +13,13 @@ using WebServerClass = WebServer;
 #include <functional>
 
 #include "devices.h"
+#include "groups.h"
 #include "ethernet_manager.h"
 #include "labels.h"
 #include "modules.h"
 #include "mqtt_manager.h"
 #include "save_guard.h"
+#include "scenes.h"
 #include "wifi_manager.h"
 
 // Serves the web UI (unless WITH_WEBUI is 0) and the REST API the UI, the MQTT
@@ -27,9 +29,9 @@ class DmxWebServer {
  public:
   DmxWebServer(DeviceManager& devices, LabelStore& labels, ModuleSettings& modules,
                WifiManager& wifi, EthernetManager& ethernet, MqttManager& mqtt,
-               SaveGuard& saveGuard)
+               SaveGuard& saveGuard, SceneStore& scenes, GroupStore& groups)
       : _devices(devices), _labels(labels), _modules(modules), _wifi(wifi), _ethernet(ethernet),
-        _mqtt(mqtt), _saveGuard(saveGuard), _server(80) {}
+        _mqtt(mqtt), _saveGuard(saveGuard), _scenes(scenes), _groups(groups), _server(80) {}
 
   void begin();
   void handleClient() { _server.handleClient(); }
@@ -62,5 +64,7 @@ class DmxWebServer {
   EthernetManager& _ethernet;
   MqttManager& _mqtt;
   SaveGuard& _saveGuard;
+  SceneStore& _scenes;
+  GroupStore& _groups;
   WebServerClass _server;
 };
