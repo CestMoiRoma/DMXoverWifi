@@ -16,6 +16,7 @@ first-time setup.
 - [Timing and latency](#timing-and-latency)
 - [Configuration files](#configuration-files)
 - [Exporting config](#exporting-config)
+- [Reseeding config from `.env`](#reseeding-config-from-env)
 - [Troubleshooting](#troubleshooting)
 
 ## Serial console
@@ -378,8 +379,26 @@ saved networks, MQTT, the system group including static IP, mesh settings, and
 every fixture with its channels.
 
 It is a human-readable backup and a way to snapshot a working board before
-experimenting. There is no importer in this firmware; restore by re-entering
-values through the UI or the serial console.
+experimenting.
+
+## Reseeding config from `.env`
+
+The export round-trips. Drop the file next to `platformio.ini` as `.env` and
+`tools/env_to_fsdata.py`, wired in as a `pre:` extra script, turns it back into
+`data/*.json` inside the LittleFS image before `buildfs` packs it. Flashing with
+`pio run -e <env> -t uploadfs` then puts the whole config back on the board.
+`.env.example` documents every key.
+
+Two things follow from this being a build step rather than a live import:
+
+- `.env` is the source of truth for the image. It is regenerated from scratch on
+  every build, so removing a group removes it from the image, and no `.env` at
+  all means the firmware falls back to its own defaults.
+- `uploadfs` writes the whole partition, so it erases anything the board saved
+  at runtime. Export first if that matters.
+
+Both `.env` and the generated `fsdata/data/` are gitignored, since they carry
+WiFi and MQTT passwords in clear text.
 
 ## Troubleshooting
 
@@ -393,9 +412,23 @@ The assets were not flashed. Run `pio run -e <env> -t uploadfs` to write the
 `fsdata/www/` LittleFS image. A firmware upload alone does not include them.
 
 **Serial port opens but nothing answers**
-Pick the board's own USB serial device rather than a Bluetooth COM port, use
-115200 baud, and make sure your terminal asserts DTR on the ESP32-S2's native USB
-CDC port. `pio device monitor` does.
+The console is silent by design: it prints no banner, no prompt and no boot log,
+and only ever replies to a command. Send `Help` and press Enter before
+concluding it is dead. Beyond that, pick the board's own USB serial device rather
+than a Bluetooth COM port, use 115200 baud, and make sure your terminal asserts
+DTR on the ESP32-S2's native USB CDC port. `pio device monitor` does.
+
+Note that the port number follows the firmware on the ESP32-S2, because the USB
+PID changes with it. A board that was on one COM port under a different firmware
+comes back on another one here.
+
+**Opening the port fails with "access denied" / `PermissionError(13)`**
+Something else already holds it, and COM ports are exclusive. The usual culprits
+are a serial monitor left running in another terminal, or an editor extension
+that reopens the port by itself, which is invisible in a process list because it
+runs inside the editor. Stop every monitor, and unplug and replug the board if
+that does not free it. The same clash makes `upload` and `uploadfs` fail, so
+close the monitor before flashing.
 
 **A pin change had no effect**
 `tx-pin` and `dir-pin` are only read at startup. Reboot.

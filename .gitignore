@@ -13,6 +13,9 @@
 # Local config backup exported from the board (may hold wifi/mqtt secrets)
 .env
 
+# Board config generated from .env by tools/env_to_fsdata.py, same secrets
+fsdata/data/
+
 # OS / filesystem cruft
 .DS_Store
 Thumbs.db

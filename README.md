@@ -137,9 +137,25 @@ pio run -e s2mini -t upload
 pio run -e s2mini -t uploadfs
 ```
 
-`uploadfs` writes the `fsdata/www/` assets to the board's LittleFS. Re-run it
-only when the UI changes; day-to-day config lives elsewhere and survives a plain
-firmware upload.
+`uploadfs` builds the LittleFS image and writes it whole, so it **erases
+everything the board had stored**, config included. A plain `upload` leaves the
+filesystem alone, so re-run `uploadfs` only when the web assets change or when
+you want to reseed the config from `.env`. Grab **Settings**, **Export .env**
+first if the board holds anything you want to keep.
+
+#### Seeding the config from `.env`
+
+Copy `.env.example` to `.env` and fill in your WiFi, DMX pins and hotspot.
+`tools/env_to_fsdata.py` runs before every build and turns that file into the
+`data/*.json` the firmware reads at boot, so the board comes up already on your
+network instead of on its hotspot. `.env` is gitignored, and so is the generated
+`fsdata/data/`.
+
+The file is the source of truth: it is rebuilt from scratch on every build, and
+dropping a group from it drops that group from the image. Leave `.env` out
+entirely and the firmware just falls back to its own defaults. The same file is
+what **Settings**, **Export .env** hands back, so a config exported from one
+board reflashes onto the next one unchanged.
 
 ### 4. Get it on the network
 
@@ -160,6 +176,9 @@ The serial console does the same thing in one line:
 ```
 Add-Wifi ssid="My Network" passwd="hunter2" priority=10
 ```
+
+Or skip the hotspot altogether: put the network in `.env` before flashing, as
+described above, and the board joins it on the first boot.
 
 ### 5. Add a fixture
 
@@ -294,13 +313,21 @@ src/
 fsdata/
   www/                  The web UI (HTML/CSS/JS) plus a copy of the wiki,
                         flashed to LittleFS with `uploadfs`
+  data/                 Board config generated from `.env` at build time,
+                        gitignored because it carries passwords
 
+tools/
+  env_to_fsdata.py      Pre-build script: `.env` to `fsdata/data/*.json`
+
+.env.example            Every key the seeding step understands
 docs/images/            Wiring schematic and UI screenshots
 ```
 
-Runtime config lives in `/data/*.json` on the board's LittleFS. It is written by
-the firmware at runtime and is not part of the flashed image, so a firmware
-re-upload leaves your WiFi, MQTT and fixtures alone.
+Runtime config lives in `/data/*.json` on the board's LittleFS. The firmware
+writes it as you change things, and a firmware `upload` leaves it alone, so your
+WiFi, MQTT and fixtures survive a code change. `uploadfs` is the exception: it
+replaces the whole partition with the built image, which is also how `.env`
+seeding gets the config onto a fresh board.
 
 ## Documentation
 
