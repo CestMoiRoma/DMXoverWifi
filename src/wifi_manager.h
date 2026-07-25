@@ -4,10 +4,18 @@
 
 #include <vector>
 
+// Addressing is per network, not per board: the same rig plugs into a venue
+// that hands out DHCP one night and wants a fixed address the next, and the
+// answer belongs to the network rather than to the board.
 struct WifiNet {
   String ssid;
   String password;
-  int priority = 0;
+  int priority = 0;  // higher wins; the UI keeps these in sync with list order
+  String ip_mode = "dhcp";  // "dhcp" | "static"
+  String static_ip;
+  String static_netmask = "255.255.255.0";
+  String static_gateway;
+  String static_dns = "1.1.1.1";
 };
 
 // Owns the saved-network list and the radio's STA/AP state. Connects to the
@@ -19,11 +27,16 @@ class WifiManager {
 
   void addNetwork(const String& ssid, const String& password, int priority);
   bool removeNetwork(const String& ssid);
+  // Replaces the whole list from an ordered array, assigning priorities from
+  // the order so that first means highest. This is what the drag-and-drop list
+  // and the per-network editor both post back.
+  void replaceNetworks(JsonArrayConst in);
   const std::vector<WifiNet>& networks() const { return _networks; }
   void networksToJson(JsonArray out) const;  // full entries, passwords included
   void scan(JsonArray out);                  // visible networks [{ssid, rssi}]
 
   bool connectKnown(uint32_t timeoutMs = 8000, int passes = 3, uint32_t pauseMs = 2000);
+  bool tryConnect(const WifiNet& net, uint32_t timeoutMs = 8000);
   bool tryConnect(const String& ssid, const String& password, uint32_t timeoutMs = 8000);
   void startAp(const String& ssid, const String& password, const String& ip);
 
@@ -42,7 +55,8 @@ class WifiManager {
 
  private:
   void save();
-  void applyStaticIp();
+  void sortByPriority();
+  void applyAddressing(const WifiNet& net);
   // Reads system.json, sanitises the hostname and hands it to the radio. Must
   // run after WiFi.mode() and before WiFi.begin() to take effect.
   void applyHostname();

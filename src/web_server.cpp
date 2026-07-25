@@ -212,6 +212,18 @@ void DmxWebServer::registerRoutes() {
     _wifi.networksToJson(doc.to<JsonArray>());
     sendJson(200, doc);
   });
+  onApi("/api/wifi", HTTP_PUT, [this]() {
+    JsonDocument body;
+    parseBody(body);
+    if (!body.is<JsonArray>()) {
+      sendError(400, "expected an ordered array of networks");
+      return;
+    }
+    _wifi.replaceNetworks(body.as<JsonArrayConst>());
+    JsonDocument doc;
+    _wifi.networksToJson(doc.to<JsonArray>());
+    sendJson(200, doc);
+  });
   onApi("/api/wifi/scan", HTTP_GET, [this]() {
     JsonDocument doc;
     _wifi.scan(doc.to<JsonArray>());
@@ -434,9 +446,20 @@ String DmxWebServer::buildEnvText() {
     out += "# --- WiFi networks ---\n";
     int i = 1;
     for (JsonObjectConst net : nets) {
-      out += "WIFI_" + String(i) + "_SSID=" + (const char*)(net["ssid"] | "") + "\n";
-      out += "WIFI_" + String(i) + "_PASSWORD=" + (const char*)(net["password"] | "") + "\n";
-      out += "WIFI_" + String(i) + "_PRIORITY=" + String((int)(net["priority"] | 0)) + "\n\n";
+      String p = "WIFI_" + String(i);
+      out += p + "_SSID=" + (const char*)(net["ssid"] | "") + "\n";
+      out += p + "_PASSWORD=" + (const char*)(net["password"] | "") + "\n";
+      out += p + "_PRIORITY=" + String((int)(net["priority"] | 0)) + "\n";
+      // Only spell out addressing when it is not the default, to keep a file
+      // full of DHCP networks readable.
+      if (String((const char*)(net["ip_mode"] | "dhcp")) == "static") {
+        out += p + "_IP_MODE=static\n";
+        out += p + "_STATIC_IP=" + (const char*)(net["static_ip"] | "") + "\n";
+        out += p + "_STATIC_NETMASK=" + (const char*)(net["static_netmask"] | "") + "\n";
+        out += p + "_STATIC_GATEWAY=" + (const char*)(net["static_gateway"] | "") + "\n";
+        out += p + "_STATIC_DNS=" + (const char*)(net["static_dns"] | "") + "\n";
+      }
+      out += "\n";
       i++;
     }
   }
@@ -462,11 +485,7 @@ String DmxWebServer::buildEnvText() {
   out += String("AP_SSID=") + (const char*)(sys["ap_ssid"] | "") + "\n";
   out += String("AP_PASSWORD=") + (const char*)(sys["ap_password"] | "") + "\n";
   out += String("AP_IP=") + (const char*)(sys["ap_ip"] | "") + "\n";
-  out += String("STA_IP_MODE=") + (const char*)(sys["sta_ip_mode"] | "dhcp") + "\n";
-  out += String("STA_STATIC_IP=") + (const char*)(sys["sta_static_ip"] | "") + "\n";
-  out += String("STA_STATIC_NETMASK=") + (const char*)(sys["sta_static_netmask"] | "") + "\n";
-  out += String("STA_STATIC_GATEWAY=") + (const char*)(sys["sta_static_gateway"] | "") + "\n";
-  out += String("STA_STATIC_DNS=") + (const char*)(sys["sta_static_dns"] | "") + "\n\n";
+  out += String("WIFI_ENABLED=") + boolEnv(sys["wifi_enabled"] | true) + "\n\n";
 
   JsonDocument mesh;
   settings_store::load("mesh.json", mesh);

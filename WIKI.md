@@ -339,12 +339,35 @@ MQTT. Values are clamped to 0 through 255. A missing `value` is treated as 0.
 
 | Method | Route | |
 |---|---|---|
-| `GET` | `/api/wifi` | Saved networks |
-| `POST` | `/api/wifi` | `{"ssid":…, "password":…, "priority":…}`, returns the updated list |
+| `GET` | `/api/wifi` | Saved networks, highest priority first, each with its own addressing |
+| `POST` | `/api/wifi` | `{"ssid":…, "password":…, "priority":…}`, adds or updates one entry |
+| `PUT` | `/api/wifi` | Replaces the whole list from an ordered array. The order **is** the priority: first is highest |
 | `DELETE` | `/api/wifi/<ssid>` | Returns the updated list |
 | `GET` | `/api/wifi/scan` | Visible networks, as `[{"ssid":…, "rssi":…}]` |
 
 `POST /api/wifi` saves without connecting, unlike the serial `Add-Wifi`.
+
+On `PUT`, an entry with **no** `password` key keeps the password it already had,
+so reordering the list or editing an address cannot wipe a credential the caller
+never mentioned. An explicit `"password": ""` still sets an open network.
+
+Each entry carries its own addressing, since the same rig meets DHCP at one
+venue and a fixed address at the next:
+
+```json
+{
+  "ssid": "Venue WiFi",
+  "password": "…",
+  "ip_mode": "static",
+  "static_ip": "192.168.1.100",
+  "static_netmask": "255.255.255.0",
+  "static_gateway": "192.168.1.1",
+  "static_dns": "1.1.1.1"
+}
+```
+
+A `static` entry whose address or gateway does not parse falls back to DHCP
+rather than dropping the board off the network.
 
 ### Configuration
 
@@ -459,10 +482,12 @@ interrupted write cannot truncate the live file.
 
 | File | Holds |
 |---|---|
-| `wifi_networks.json` | `[{ssid, password, priority}]` |
-| `devices.json` | `[{id, name, start_channel, channels[]}]` |
+| `wifi_networks.json` | `[{ssid, password, priority, ip_mode, static_ip, static_netmask, static_gateway, static_dns}]`, highest priority first |
+| `devices.json` | `[{id, name, category, start_channel, channels[], labels[]}]` |
+| `labels.json` | `[{id, name, color}]` |
 | `mqtt.json` | `enabled`, `host`, `port`, `username`, `password`, `base_topic`, `discovery_prefix` |
-| `system.json` | `dmx_tx_pin`, `dmx_dir_pin_enabled`, `dmx_dir_pin`, `hostname`, `ap_ssid`, `ap_password`, `ap_ip`, `sta_ip_mode`, `sta_static_ip`, `sta_static_netmask`, `sta_static_gateway`, `sta_static_dns` |
+| `api.json` | `http_api_enabled`, `websocket_enabled`, `mqtt_enabled`, `api_key` |
+| `system.json` | `wifi_enabled`, `dmx_tx_pin`, `dmx_dir_pin_enabled`, `dmx_dir_pin`, `hostname`, `ap_ssid`, `ap_password`, `ap_ip` |
 | `mesh.json` | `role`, `ssid`, `password` (work in progress) |
 
 Shipping defaults: DMX TX on `IO4` (ESP32) or fixed `GPIO2` (ESP8266), direction
@@ -470,9 +495,11 @@ pin disabled on `IO18`, hostname and hotspot SSID `ESP-DMX`, hotspot password
 `DMX4ALL1`, hotspot address `1.1.1.1`, DHCP, MQTT disabled with base topic
 `dmxwifi`.
 
-Static IP is applied when joining a network, and only when `sta_ip_mode` is
-`static` and both an address and a gateway are set. If the values do not parse,
-the board stays on DHCP rather than dropping off the network.
+Addressing moved out of `system.json` and into each WiFi entry. The board-wide
+`sta_ip_mode` and `sta_static_*` keys are gone, along with the `STA_*` keys in
+`.env`: a rig that tours meets DHCP at one venue and a fixed address at the
+next, and the answer belongs to the network rather than to the board. Static is
+applied when joining, and only when both an address and a gateway parse.
 
 `hostname` is handed to the radio and announced over mDNS, so the board answers
 on `<hostname>.local` as well as on whatever address the router gave it. It is

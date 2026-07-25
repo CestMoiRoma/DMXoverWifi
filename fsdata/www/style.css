@@ -412,3 +412,21 @@ form { margin: 0; }
 .chip.cat.on { background: var(--fg); border-color: var(--fg); color: var(--bg); }
 #category-filters { margin-bottom: 0.5rem; }
 #category-filters:empty { display: none; }
+
+/* -- draggable saved-network list -- */
+
+.list-item.draggable { gap: 0.5rem; cursor: default; }
+.list-item.draggable .card-sub { display: inline; margin-left: 0.5rem; }
+
+.drag-handle {
+  cursor: grab;
+  color: var(--muted);
+  user-select: none;
+  letter-spacing: -0.15em;
+}
+
+.list-item.dragging { opacity: 0.4; }
+.list-item.drop-target { border-bottom-color: var(--accent); box-shadow: 0 2px 0 var(--accent); }
+
+/* The SSID form lost its priority column when order became the priority. */
+#wifi-form { grid-template-columns: 1fr 1fr; }

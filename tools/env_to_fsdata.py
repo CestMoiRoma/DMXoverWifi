@@ -82,10 +82,18 @@ def wifi_from_env(cfg):
         group = groups[n]
         if not group.get("ssid"):
             continue
+        mode = group.get("ip_mode", "dhcp").strip().lower()
         out.append({
             "ssid": group["ssid"],
             "password": group.get("password", ""),
             "priority": as_int(group.get("priority", 0)),
+            # Addressing is per network: the same rig meets DHCP at one venue
+            # and a fixed address at the next.
+            "ip_mode": mode if mode == "static" else "dhcp",
+            "static_ip": group.get("static_ip", ""),
+            "static_netmask": group.get("static_netmask", "255.255.255.0"),
+            "static_gateway": group.get("static_gateway", ""),
+            "static_dns": group.get("static_dns", "1.1.1.1"),
         })
     return out or None
 
@@ -108,8 +116,6 @@ SYSTEM_KEYS = (
     "WIFI_ENABLED",
     "DMX_TX_PIN", "DMX_DIR_PIN_ENABLED", "DMX_DIR_PIN",
     "HOSTNAME", "AP_SSID", "AP_PASSWORD", "AP_IP",
-    "STA_IP_MODE", "STA_STATIC_IP", "STA_STATIC_NETMASK",
-    "STA_STATIC_GATEWAY", "STA_STATIC_DNS",
 )
 
 API_KEYS = ("API_HTTP_ENABLED", "API_WEBSOCKET_ENABLED", "API_MQTT_ENABLED")
@@ -141,11 +147,6 @@ def system_from_env(cfg, default_tx_pin):
         "ap_ssid": cfg.get("AP_SSID", "ESP-DMX"),
         "ap_password": cfg.get("AP_PASSWORD", "DMX4ALL1"),
         "ap_ip": cfg.get("AP_IP", "1.1.1.1"),
-        "sta_ip_mode": cfg.get("STA_IP_MODE", "dhcp"),
-        "sta_static_ip": cfg.get("STA_STATIC_IP", ""),
-        "sta_static_netmask": cfg.get("STA_STATIC_NETMASK", "255.255.255.0"),
-        "sta_static_gateway": cfg.get("STA_STATIC_GATEWAY", ""),
-        "sta_static_dns": cfg.get("STA_STATIC_DNS", "1.1.1.1"),
     }
 
 

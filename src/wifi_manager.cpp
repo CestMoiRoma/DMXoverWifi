@@ -40,36 +40,90 @@ void WifiManager::begin() {
   reloadNetworks();
 }
 
+static WifiNet netFromJson(JsonObjectConst n) {
+  WifiNet net;
+  net.ssid = (const char*)(n["ssid"] | "");
+  net.password = (const char*)(n["password"] | "");
+  net.priority = n["priority"] | 0;
+  net.ip_mode = (const char*)(n["ip_mode"] | "dhcp");
+  if (net.ip_mode != "static") net.ip_mode = "dhcp";
+  net.static_ip = (const char*)(n["static_ip"] | "");
+  net.static_netmask = (const char*)(n["static_netmask"] | DEFAULT_NETMASK);
+  net.static_gateway = (const char*)(n["static_gateway"] | "");
+  net.static_dns = (const char*)(n["static_dns"] | "1.1.1.1");
+  return net;
+}
+
+static void netToJson(const WifiNet& net, JsonObject o) {
+  o["ssid"] = net.ssid;
+  o["password"] = net.password;
+  o["priority"] = net.priority;
+  o["ip_mode"] = net.ip_mode;
+  o["static_ip"] = net.static_ip;
+  o["static_netmask"] = net.static_netmask;
+  o["static_gateway"] = net.static_gateway;
+  o["static_dns"] = net.static_dns;
+}
+
 void WifiManager::reloadNetworks() {
   JsonDocument doc;
   settings_store::load("wifi_networks.json", doc);
   _networks.clear();
-  for (JsonObjectConst n : doc.as<JsonArrayConst>()) {
-    WifiNet net;
-    net.ssid = (const char*)(n["ssid"] | "");
-    net.password = (const char*)(n["password"] | "");
-    net.priority = n["priority"] | 0;
-    _networks.push_back(net);
-  }
+  for (JsonObjectConst n : doc.as<JsonArrayConst>()) _networks.push_back(netFromJson(n));
+  sortByPriority();
+}
+
+// Highest priority first. Kept stable so two networks sharing a priority hold
+// the order they were saved in rather than shuffling on every boot.
+void WifiManager::sortByPriority() {
+  std::stable_sort(_networks.begin(), _networks.end(),
+                   [](const WifiNet& a, const WifiNet& b) { return a.priority > b.priority; });
 }
 
 void WifiManager::save() {
   JsonDocument doc;
   JsonArray arr = doc.to<JsonArray>();
-  for (const WifiNet& net : _networks) {
-    JsonObject o = arr.add<JsonObject>();
-    o["ssid"] = net.ssid;
-    o["password"] = net.password;
-    o["priority"] = net.priority;
-  }
+  for (const WifiNet& net : _networks) netToJson(net, arr.add<JsonObject>());
   settings_store::save("wifi_networks.json", doc);
+}
+
+void WifiManager::replaceNetworks(JsonArrayConst in) {
+  std::vector<WifiNet> previous = _networks;
+  _networks.clear();
+  int count = in.size();
+  for (JsonObjectConst n : in) {
+    WifiNet net = netFromJson(n);
+    if (!net.ssid.length()) continue;
+    // An absent password keeps whatever the entry already had. Reordering a
+    // list or editing an address should not be able to wipe a credential the
+    // caller never mentioned; an explicit "" still sets an open network.
+    if (!n["password"].is<const char*>()) {
+      for (const WifiNet& old : previous) {
+        if (old.ssid == net.ssid) {
+          net.password = old.password;
+          break;
+        }
+      }
+    }
+    // The posted order is the priority: first is highest. Numbering them here
+    // rather than trusting the body keeps the two from ever disagreeing.
+    net.priority = count--;
+    _networks.push_back(net);
+  }
+  save();
 }
 
 void WifiManager::addNetwork(const String& ssid, const String& password, int priority) {
   for (size_t i = 0; i < _networks.size(); i++) {
     if (_networks[i].ssid == ssid) {
-      _networks.erase(_networks.begin() + i);
-      break;
+      // Re-adding keeps whatever addressing the entry already had, so setting a
+      // static address then fixing a typo in the password does not silently
+      // drop back to DHCP.
+      _networks[i].password = password;
+      _networks[i].priority = priority;
+      sortByPriority();
+      save();
+      return;
     }
   }
   WifiNet net;
@@ -77,6 +131,7 @@ void WifiManager::addNetwork(const String& ssid, const String& password, int pri
   net.password = password;
   net.priority = priority;
   _networks.push_back(net);
+  sortByPriority();
   save();
 }
 
@@ -93,12 +148,7 @@ bool WifiManager::removeNetwork(const String& ssid) {
 }
 
 void WifiManager::networksToJson(JsonArray out) const {
-  for (const WifiNet& net : _networks) {
-    JsonObject o = out.add<JsonObject>();
-    o["ssid"] = net.ssid;
-    o["password"] = net.password;
-    o["priority"] = net.priority;
-  }
+  for (const WifiNet& net : _networks) netToJson(net, out.add<JsonObject>());
 }
 
 void WifiManager::scan(JsonArray out) {
@@ -111,20 +161,20 @@ void WifiManager::scan(JsonArray out) {
   WiFi.scanDelete();
 }
 
-void WifiManager::applyStaticIp() {
-  // On Arduino the static config must be applied before WiFi.begin(), unlike
-  // CircuitPython which set it after associating.
-  JsonDocument sys;
-  settings_store::load("system.json", sys);
-  if (String((const char*)(sys["sta_ip_mode"] | "dhcp")) != "static") return;
-
-  IPAddress ip, gateway, netmask, dns;
-  if (!ip.fromString((const char*)(sys["sta_static_ip"] | ""))) return;
-  if (!gateway.fromString((const char*)(sys["sta_static_gateway"] | ""))) return;
-  if (!netmask.fromString((const char*)(sys["sta_static_netmask"] | DEFAULT_NETMASK))) {
-    netmask.fromString(DEFAULT_NETMASK);
+// On Arduino the address config must be applied before WiFi.begin(), unlike
+// CircuitPython which set it after associating. A static entry that does not
+// parse falls back to DHCP rather than dropping the board off the network.
+void WifiManager::applyAddressing(const WifiNet& net) {
+  if (net.ip_mode != "static") {
+    // Undo any static config left over from a previous network in this boot.
+    WiFi.config(IPAddress((uint32_t)0), IPAddress((uint32_t)0), IPAddress((uint32_t)0));
+    return;
   }
-  dns.fromString((const char*)(sys["sta_static_dns"] | "1.1.1.1"));
+  IPAddress ip, gateway, netmask, dns;
+  if (!ip.fromString(net.static_ip)) return;
+  if (!gateway.fromString(net.static_gateway)) return;
+  if (!netmask.fromString(net.static_netmask)) netmask.fromString(DEFAULT_NETMASK);
+  if (!dns.fromString(net.static_dns)) dns.fromString("1.1.1.1");
   WiFi.config(ip, gateway, netmask, dns);
 }
 
@@ -153,9 +203,30 @@ void WifiManager::loop() {
 }
 
 bool WifiManager::tryConnect(const String& ssid, const String& password, uint32_t timeoutMs) {
+  WifiNet net;
+  net.ssid = ssid;
+  net.password = password;
+  // A network we have saved knows its own addressing; borrow it so the console's
+  // Add-Wifi does not connect on DHCP to something configured static.
+  for (const WifiNet& known : _networks) {
+    if (known.ssid == ssid) {
+      net.ip_mode = known.ip_mode;
+      net.static_ip = known.static_ip;
+      net.static_netmask = known.static_netmask;
+      net.static_gateway = known.static_gateway;
+      net.static_dns = known.static_dns;
+      break;
+    }
+  }
+  return tryConnect(net, timeoutMs);
+}
+
+bool WifiManager::tryConnect(const WifiNet& net, uint32_t timeoutMs) {
+  const String& ssid = net.ssid;
+  const String& password = net.password;
   WiFi.mode(WIFI_STA);  // drops any active AP, matching the CircuitPython flow
   applyHostname();
-  applyStaticIp();
+  applyAddressing(net);
   WiFi.begin(ssid.c_str(), password.length() ? password.c_str() : nullptr);
 
   uint32_t start = millis();
@@ -174,14 +245,12 @@ bool WifiManager::tryConnect(const String& ssid, const String& password, uint32_
 bool WifiManager::connectKnown(uint32_t timeoutMs, int passes, uint32_t pauseMs) {
   // The radio often misses on the very first attempt after a cold boot; a couple
   // of retry passes cover that without doubling the wait when nothing is there.
-  std::vector<WifiNet> ordered = _networks;
-  std::sort(ordered.begin(), ordered.end(),
-            [](const WifiNet& a, const WifiNet& b) { return a.priority > b.priority; });
-
+  // _networks is already highest-priority-first, kept that way on load and on
+  // every save, so the list the UI shows is the order actually tried.
   for (int attempt = 0; attempt < passes; attempt++) {
-    for (const WifiNet& net : ordered) {
+    for (const WifiNet& net : _networks) {
       if (!net.ssid.length()) continue;
-      if (tryConnect(net.ssid, net.password, timeoutMs)) return true;
+      if (tryConnect(net, timeoutMs)) return true;
     }
     if (attempt < passes - 1 && pauseMs) delay(pauseMs);
   }

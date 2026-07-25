@@ -39,11 +39,7 @@ static void seedDefault(const char* name, JsonDocument& doc) {
     doc["ap_ssid"] = "ESP-DMX";
     doc["ap_password"] = "DMX4ALL1";
     doc["ap_ip"] = "1.1.1.1";
-    doc["sta_ip_mode"] = "dhcp";  // "dhcp" | "static"
-    doc["sta_static_ip"] = "";
-    doc["sta_static_netmask"] = "255.255.255.0";
-    doc["sta_static_gateway"] = "";
-    doc["sta_static_dns"] = "1.1.1.1";
+    // Station addressing lives per WiFi entry now, not here.
   } else if (strcmp(name, "mesh.json") == 0) {
     doc["role"] = "none";  // WIP: stored only, not acted on yet
     doc["ssid"] = "";

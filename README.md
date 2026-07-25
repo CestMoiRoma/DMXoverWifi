@@ -242,14 +242,19 @@ once a rig actually spans more than one kind of machine.
 Six sub-pages:
 
 - **Config** saves and restores the board's whole live config as a `.json` file,
-  and sets the DMX TX and DE/RE pins. The pin fields are hidden on the ESP8266,
-  where the output is nailed to Serial1 on GPIO2. The legacy `.env` export lives
-  here too.
+  sets the DMX TX and DE/RE pins, and reboots the board. The DE/RE pin field only
+  appears once the direction line is enabled, and the pin fields are hidden
+  entirely on the ESP8266, where the output is nailed to Serial1 on GPIO2. The
+  legacy `.env` export lives here too.
 - **Labels** creates, renames, recolours and removes tags. Removing one clears it
   from every fixture that carried it, leaving their channels alone.
-- **WiFi** holds the saved networks with priorities and a scanner, the hostname,
-  DHCP or static addressing, and the fallback hotspot credentials.
-- **MQTT** is the full broker and Home Assistant discovery configuration.
+- **WiFi** holds the saved networks, the hostname and the fallback hotspot.
+  Networks are tried from the top down: drag one to change the order, which *is*
+  the priority. The gear on each opens its own settings, including whether that
+  network uses DHCP or a fixed address, since a touring rig meets both.
+- **API** switches the HTTP API, WebSocket and MQTT subsystems on or off,
+  shows and regenerates the API key, and holds the full broker and Home
+  Assistant discovery configuration.
 - **Parent/Child** is the work-in-progress mesh section, stored only.
 - **Info** shows the firmware version, the board, the mDNS name, the author, the
   repository and the serial console reference. The wiki link works offline too,

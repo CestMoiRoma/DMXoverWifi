@@ -464,13 +464,14 @@ async function renderSettings() {
   apForm.ap_password.value = system.ap_password || "";
   apForm.ap_ip.value = system.ap_ip || "";
 
-  const staticForm = document.getElementById("staticip-form");
-  staticForm.sta_ip_mode.value = system.sta_ip_mode || "dhcp";
-  staticForm.sta_static_ip.value = system.sta_static_ip || "";
-  staticForm.sta_static_netmask.value = system.sta_static_netmask || "";
-  staticForm.sta_static_gateway.value = system.sta_static_gateway || "";
-  staticForm.sta_static_dns.value = system.sta_static_dns || "";
-  updateStaticIpFields();
+  updateDirPinField();
+
+  const modules = await api("/api/modules");
+  const modForm = document.getElementById("modules-form");
+  modForm.http_api_enabled.checked = !!modules.http_api_enabled;
+  modForm.websocket_enabled.checked = !!modules.websocket_enabled;
+  modForm.mqtt_enabled.checked = !!modules.mqtt_enabled;
+  document.getElementById("api-key").value = modules.api_key || "(hidden)";
 
   const mesh = await api("/api/mesh");
   const meshForm = document.getElementById("mesh-form");
@@ -554,31 +555,132 @@ document.getElementById("label-form").addEventListener("submit", async (e) => {
 
 // -- wifi --
 
-async function renderWifiList() {
-  const networks = await api("/api/wifi");
+let wifiCache = [];
+let dragIndex = null;
+
+// Posts the list back in its current order. The board turns the order into
+// priorities, so there is one source of truth rather than two that can drift.
+async function saveWifiOrder() {
+  wifiCache = await api("/api/wifi", "PUT", wifiCache);
+  renderWifiList();
+}
+
+async function renderWifiList(fetchFirst) {
+  if (fetchFirst !== false) wifiCache = await api("/api/wifi");
   const list = document.getElementById("wifi-list");
   list.innerHTML = "";
-  networks.forEach((net) => {
-    const item = el("div", { class: "list-item" }, [
-      el("span", { class: "grow" }, [net.ssid + " (priority " + net.priority + ")"]),
-    ]);
-    const del = el("button", { class: "secondary" }, ["Remove"]);
-    del.addEventListener("click", async () => {
-      await api("/api/wifi/" + encodeURIComponent(net.ssid), "DELETE");
-      renderWifiList();
+  if (wifiCache.length === 0) {
+    list.appendChild(el("p", { class: "hint" }, ["No saved networks."]));
+    return;
+  }
+  wifiCache.forEach((net, index) => {
+    const item = el("div", { class: "list-item draggable", draggable: "true" });
+
+    item.appendChild(el("span", { class: "drag-handle", title: "Drag to reorder" }, ["⠿"]));
+    item.appendChild(
+      el("span", { class: "grow" }, [
+        net.ssid,
+        el("span", { class: "card-sub" }, [
+          net.ip_mode === "static" ? "static " + (net.static_ip || "?") : "DHCP",
+        ]),
+      ])
+    );
+
+    const actions = el("div", { class: "card-actions" });
+    actions.appendChild(iconButton(ICON_GEAR, "Edit", () => openWifiModal(index)));
+    actions.appendChild(
+      iconButton(ICON_TRASH, "Remove", async () => {
+        if (!confirm('Remove "' + net.ssid + '"?')) return;
+        await api("/api/wifi/" + encodeURIComponent(net.ssid), "DELETE");
+        renderWifiList();
+      })
+    );
+    item.appendChild(actions);
+
+    item.addEventListener("dragstart", () => {
+      dragIndex = index;
+      item.classList.add("dragging");
     });
-    item.appendChild(del);
+    item.addEventListener("dragend", () => item.classList.remove("dragging"));
+    item.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      item.classList.add("drop-target");
+    });
+    item.addEventListener("dragleave", () => item.classList.remove("drop-target"));
+    item.addEventListener("drop", (e) => {
+      e.preventDefault();
+      item.classList.remove("drop-target");
+      if (dragIndex === null || dragIndex === index) return;
+      const [moved] = wifiCache.splice(dragIndex, 1);
+      wifiCache.splice(index, 0, moved);
+      dragIndex = null;
+      saveWifiOrder();
+    });
+
     list.appendChild(item);
   });
 }
 
+// -- per-network editor --
+
+let editingWifiIndex = null;
+
+function updateWifiStaticFields() {
+  const form = document.getElementById("wifi-edit-form");
+  document.getElementById("wifi-static-fields").hidden = form.ip_mode.value !== "static";
+}
+
+function openWifiModal(index) {
+  const net = wifiCache[index];
+  const form = document.getElementById("wifi-edit-form");
+  editingWifiIndex = index;
+  form.ssid.value = net.ssid;
+  form.password.value = net.password || "";
+  form.ip_mode.value = net.ip_mode || "dhcp";
+  form.static_ip.value = net.static_ip || "";
+  form.static_netmask.value = net.static_netmask || "255.255.255.0";
+  form.static_gateway.value = net.static_gateway || "";
+  form.static_dns.value = net.static_dns || "1.1.1.1";
+  updateWifiStaticFields();
+  document.getElementById("wifi-modal").hidden = false;
+}
+
+function closeWifiModal() {
+  document.getElementById("wifi-modal").hidden = true;
+  editingWifiIndex = null;
+}
+
+document.querySelectorAll("#wifi-modal [data-close-wifi]").forEach((node) => {
+  node.addEventListener("click", closeWifiModal);
+});
+
+document.getElementById("wifi-edit-form").ip_mode.addEventListener("change", updateWifiStaticFields);
+
+document.getElementById("wifi-edit-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  wifiCache[editingWifiIndex] = {
+    ssid: form.ssid.value,
+    password: form.password.value,
+    ip_mode: form.ip_mode.value,
+    static_ip: form.static_ip.value,
+    static_netmask: form.static_netmask.value,
+    static_gateway: form.static_gateway.value,
+    static_dns: form.static_dns.value,
+  };
+  closeWifiModal();
+  await saveWifiOrder();
+});
+
 document.getElementById("wifi-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const form = e.target;
+  // New networks land at the bottom, which is the lowest priority. Drag them up
+  // if they should be tried first.
   await api("/api/wifi", "POST", {
     ssid: form.ssid.value,
     password: form.password.value,
-    priority: parseInt(form.priority.value, 10) || 0,
+    priority: 0,
   });
   form.reset();
   renderWifiList();
@@ -608,29 +710,64 @@ document.getElementById("ap-form").addEventListener("submit", async (e) => {
   });
 });
 
-function updateStaticIpFields() {
-  const form = document.getElementById("staticip-form");
-  const dhcp = form.sta_ip_mode.value === "dhcp";
-  ["sta_static_ip", "sta_static_netmask", "sta_static_gateway", "sta_static_dns"].forEach((n) => {
-    form[n].disabled = dhcp;
-  });
-}
+// -- modules and the api key --
 
-document.getElementById("staticip-form").sta_ip_mode.addEventListener("change", updateStaticIpFields);
-
-document.getElementById("staticip-form").addEventListener("submit", async (e) => {
+document.getElementById("modules-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const form = e.target;
-  await api("/api/system", "POST", {
-    sta_ip_mode: form.sta_ip_mode.value,
-    sta_static_ip: form.sta_static_ip.value,
-    sta_static_netmask: form.sta_static_netmask.value,
-    sta_static_gateway: form.sta_static_gateway.value,
-    sta_static_dns: form.sta_static_dns.value,
+  await api("/api/modules", "POST", {
+    http_api_enabled: form.http_api_enabled.checked,
+    websocket_enabled: form.websocket_enabled.checked,
+    mqtt_enabled: form.mqtt_enabled.checked,
   });
 });
 
-// -- dmx pins --
+document.getElementById("api-key-copy").addEventListener("click", async () => {
+  const field = document.getElementById("api-key");
+  const status = document.getElementById("api-key-status");
+  try {
+    await navigator.clipboard.writeText(field.value);
+    status.textContent = "Copied.";
+  } catch (err) {
+    // Clipboard access needs a secure context, which plain http on a LAN is not.
+    field.select();
+    status.textContent = "Could not reach the clipboard, so the key is selected instead.";
+  }
+});
+
+document.getElementById("api-key-new").addEventListener("click", async () => {
+  if (!confirm("Regenerate the API key? Anything using the old one stops working.")) return;
+  const res = await api("/api/modules/key", "POST");
+  document.getElementById("api-key").value = res.api_key;
+  document.getElementById("api-key-status").textContent = "New key in place, old one revoked.";
+});
+
+// -- dmx pins and reboot --
+
+// The pin only means something when the direction line is driven at all.
+function updateDirPinField() {
+  const form = document.getElementById("system-pins-form");
+  document.getElementById("field-dir-pin").hidden = !form.dmx_dir_pin_enabled.checked;
+}
+
+document
+  .getElementById("system-pins-form")
+  .dmx_dir_pin_enabled.addEventListener("change", updateDirPinField);
+
+document.getElementById("reboot-btn").addEventListener("click", async () => {
+  if (!confirm("Reboot the board? DMX output stops for a couple of seconds.")) return;
+  const status = document.getElementById("reboot-status");
+  status.textContent = "Rebooting...";
+  try {
+    await api("/api/reboot", "POST");
+  } catch (err) {
+    // The board drops the connection on its way down, which is expected.
+  }
+  setTimeout(() => {
+    status.textContent = "Back up, reloading.";
+    location.reload();
+  }, 8000);
+});
 
 document.getElementById("system-pins-form").addEventListener("submit", async (e) => {
   e.preventDefault();

@@ -28,7 +28,7 @@
       <button data-panel="config" class="subnav-btn active">Config</button>
       <button data-panel="labels" class="subnav-btn">Labels</button>
       <button data-panel="wifi" class="subnav-btn">WiFi</button>
-      <button data-panel="mqtt" class="subnav-btn">MQTT</button>
+      <button data-panel="api" class="subnav-btn">API</button>
       <button data-panel="mesh" class="subnav-btn">Parent/Child</button>
       <button data-panel="info" class="subnav-btn">Info</button>
     </nav>
@@ -63,7 +63,7 @@
             <label for="sys-dir-enable">Enable DE/RE direction pin
               <span class="hint">(leave off if DE+RE are tied to VCC)</span></label>
           </div>
-          <div class="field">
+          <div class="field" id="field-dir-pin" hidden>
             <label for="sys-dir">DE/RE pin</label>
             <input type="text" id="sys-dir" name="dmx_dir_pin" placeholder="IO18">
           </div>
@@ -72,6 +72,18 @@
           </div>
         </form>
         <p class="hint">Both take effect on the next reboot.</p>
+      </div>
+
+      <div class="section">
+        <h2>Reboot</h2>
+        <p class="hint">
+          Pin changes, hostname changes and the WiFi switch only take effect on
+          restart. DMX output stops for a couple of seconds.
+        </p>
+        <div class="form-actions start">
+          <button type="button" id="reboot-btn" class="secondary">Reboot the board</button>
+        </div>
+        <p id="reboot-status" class="hint"></p>
       </div>
 
       <div class="section" id="section-dmx-pins-esp8266" hidden>
@@ -117,12 +129,15 @@
     <div id="panel-wifi" class="panel">
       <div class="section">
         <h2>Saved networks</h2>
-        <div id="wifi-list"></div>
+        <p class="hint">
+          Tried from the top down. Drag an entry to change the order, which is
+          the priority. Each network keeps its own addressing.
+        </p>
+        <div id="wifi-list" class="sortable"></div>
         <form id="wifi-form" class="form-inline">
           <input type="text" name="ssid" placeholder="SSID" required list="wifi-scan-results">
           <datalist id="wifi-scan-results"></datalist>
           <input type="password" name="password" placeholder="Password">
-          <input type="number" name="priority" placeholder="Priority" value="0">
           <div class="form-actions">
             <button type="submit">Add</button>
             <button type="button" id="wifi-scan-btn" class="secondary">Scan</button>
@@ -137,38 +152,6 @@
             <label for="sys-hostname">Hostname</label>
             <input type="text" id="sys-hostname" name="hostname">
             <span class="hint" id="hostname-hint"></span>
-          </div>
-          <div class="form-actions">
-            <button type="submit">Save</button>
-          </div>
-        </form>
-      </div>
-
-      <div class="section">
-        <h2>Address <span class="hint">(when joined to a known network)</span></h2>
-        <form id="staticip-form" class="form-stacked">
-          <div class="field">
-            <label for="staticip-mode">Mode</label>
-            <select id="staticip-mode" name="sta_ip_mode">
-              <option value="dhcp">DHCP (automatic)</option>
-              <option value="static">Static</option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="staticip-ip">IP address</label>
-            <input type="text" id="staticip-ip" name="sta_static_ip" placeholder="192.168.1.100">
-          </div>
-          <div class="field">
-            <label for="staticip-netmask">Netmask</label>
-            <input type="text" id="staticip-netmask" name="sta_static_netmask" placeholder="255.255.255.0">
-          </div>
-          <div class="field">
-            <label for="staticip-gateway">Gateway</label>
-            <input type="text" id="staticip-gateway" name="sta_static_gateway" placeholder="192.168.1.1">
-          </div>
-          <div class="field">
-            <label for="staticip-dns">DNS</label>
-            <input type="text" id="staticip-dns" name="sta_static_dns" placeholder="1.1.1.1">
           </div>
           <div class="form-actions">
             <button type="submit">Save</button>
@@ -198,10 +181,54 @@
       </div>
     </div>
 
-    <!-- MQTT -->
-    <div id="panel-mqtt" class="panel">
+    <!-- API -->
+    <div id="panel-api" class="panel">
       <div class="section">
-        <h2>MQTT</h2>
+        <h2>Modules</h2>
+        <p class="hint">
+          Each subsystem can be switched off entirely. Turning MQTT off leaves
+          its broker settings below intact for when it comes back.
+        </p>
+        <form id="modules-form" class="form-stacked">
+          <div class="field field-inline">
+            <input type="checkbox" id="mod-http" name="http_api_enabled">
+            <label for="mod-http">HTTP API
+              <span class="hint">(off blocks every caller but the web UI)</span></label>
+          </div>
+          <div class="field field-inline">
+            <input type="checkbox" id="mod-ws" name="websocket_enabled">
+            <label for="mod-ws">WebSocket
+              <span class="hint">(live updates; off falls back to plain HTTP)</span></label>
+          </div>
+          <div class="field field-inline">
+            <input type="checkbox" id="mod-mqtt" name="mqtt_enabled">
+            <label for="mod-mqtt">MQTT bridge</label>
+          </div>
+          <div class="form-actions">
+            <button type="submit">Save</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="section">
+        <h2>API key</h2>
+        <p class="hint">
+          Required by every caller except the UI this page is served from, in an
+          <code>X-API-Key</code> header or an <code>api_key</code> query
+          parameter. Regenerating it revokes the old one immediately.
+        </p>
+        <div class="field">
+          <input type="text" id="api-key" readonly>
+        </div>
+        <div class="form-actions start">
+          <button type="button" id="api-key-copy" class="secondary">Copy</button>
+          <button type="button" id="api-key-new" class="secondary">Regenerate</button>
+        </div>
+        <p id="api-key-status" class="hint"></p>
+      </div>
+
+      <div class="section">
+        <h2>MQTT broker</h2>
         <form id="mqtt-form" class="form-stacked">
           <div class="field field-inline">
             <input type="checkbox" id="mqtt-enabled" name="enabled">
@@ -293,6 +320,58 @@
   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
   <span class="fab-label">New device</span>
 </button>
+
+<!-- Per-network settings, opened from the gear on each saved network. -->
+<div id="wifi-modal" class="modal" hidden>
+  <div class="modal-backdrop" data-close-wifi></div>
+  <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="wifi-form-title">
+    <div class="modal-head">
+      <h2 id="wifi-form-title">Edit network</h2>
+      <button type="button" class="icon-btn" data-close-wifi aria-label="Close">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <form id="wifi-edit-form" class="form-stacked">
+      <div class="field">
+        <label for="wifi-edit-ssid">SSID</label>
+        <input type="text" id="wifi-edit-ssid" name="ssid" required>
+      </div>
+      <div class="field">
+        <label for="wifi-edit-pass">Password</label>
+        <input type="password" id="wifi-edit-pass" name="password">
+      </div>
+      <div class="field">
+        <label for="wifi-edit-mode">Addressing</label>
+        <select id="wifi-edit-mode" name="ip_mode">
+          <option value="dhcp">DHCP (automatic)</option>
+          <option value="static">Static</option>
+        </select>
+      </div>
+      <div id="wifi-static-fields" hidden>
+        <div class="field">
+          <label for="wifi-edit-ip">IP address</label>
+          <input type="text" id="wifi-edit-ip" name="static_ip" placeholder="192.168.1.100">
+        </div>
+        <div class="field">
+          <label for="wifi-edit-mask">Netmask</label>
+          <input type="text" id="wifi-edit-mask" name="static_netmask" placeholder="255.255.255.0">
+        </div>
+        <div class="field">
+          <label for="wifi-edit-gw">Gateway</label>
+          <input type="text" id="wifi-edit-gw" name="static_gateway" placeholder="192.168.1.1">
+        </div>
+        <div class="field">
+          <label for="wifi-edit-dns">DNS</label>
+          <input type="text" id="wifi-edit-dns" name="static_dns" placeholder="1.1.1.1">
+        </div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="secondary" data-close-wifi>Cancel</button>
+        <button type="submit">Save network</button>
+      </div>
+    </form>
+  </div>
+</div>
 
 <!-- Create and edit both run through this dialog. -->
 <div id="device-modal" class="modal" hidden>
