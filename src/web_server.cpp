@@ -55,8 +55,11 @@ bool DmxWebServer::serveFile(const char* path, const char* contentType) {
 // stalled for the whole transfer and anything arriving meanwhile queues behind
 // it. Every browser has handled gzip for twenty years, so there is no
 // uncompressed copy to fall back to.
+//
+// Do not add Content-Encoding here. streamFile adds it by itself for any file
+// whose name ends in .gz, and sending it twice makes a browser try to inflate
+// the body twice and fail the whole page with ERR_CONTENT_DECODING_FAILED.
 void DmxWebServer::serveIndex() {
-  _server.sendHeader("Content-Encoding", "gzip");
   serveFile("/www/index.html.gz", "text/html");
 }
 
