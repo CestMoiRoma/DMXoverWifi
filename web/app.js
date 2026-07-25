@@ -97,6 +97,7 @@ function sendValue(deviceId, offset, value, immediate) {
   // traffic. A widget that reads the value back must see what it just asked
   // for, not what the last fetch happened to contain.
   cacheChannelValue(deviceId, offset, value);
+  lastLocalWrite.set(deviceId + ":" + offset, Date.now());
   pendingValues.set(deviceId + ":" + offset, { deviceId: deviceId, offset: offset, value: value });
   if (immediate) {
     if (flushTimer) {
@@ -127,9 +128,24 @@ function cacheChannelValue(deviceId, offset, value) {
   if (channel) channel.value = value;
 }
 
+// How long after writing a channel ourselves we stop believing what comes back
+// for it. The board echoes every change, including our own, and that echo
+// arrives at least one round trip late. While a joystick is held the value has
+// already moved on by then, so accepting the echo would put the older value
+// back and the fixture would crawl backwards against the stick.
+//
+// Long enough to cover a round trip on a slow link, short enough that letting go
+// hands control back to the other browsers almost at once.
+const ECHO_TRUST_DELAY_MS = 500;
+let lastLocalWrite = new Map();
+
 function applyRemoteValue(deviceId, offset, value) {
+  const key = deviceId + ":" + offset;
+  const wroteAt = lastLocalWrite.get(key);
+  if (wroteAt !== undefined && Date.now() - wroteAt < ECHO_TRUST_DELAY_MS) return;
+
   cacheChannelValue(deviceId, offset, value);
-  const control = channelControls.get(deviceId + ":" + offset);
+  const control = channelControls.get(key);
   // Skip the control currently under the pointer: overwriting it mid-drag would
   // fight the person holding it.
   if (!control || control.dragging) return;
@@ -654,6 +670,14 @@ const EZ_KINDS = {
       { key: "invert_h", label: "Invert horizontal", type: "checkbox", default: "" },
       { key: "invert_v", label: "Invert vertical", type: "checkbox", default: "" },
       {
+        key: "invert_h_fine",
+        label: "Invert horizontal fine",
+        type: "checkbox",
+        default: "",
+        hint: "For a fixture whose fine channel counts the other way from its coarse one.",
+      },
+      { key: "invert_v_fine", label: "Invert vertical fine", type: "checkbox", default: "" },
+      {
         key: "max_step",
         label: "Fastest step at full deflection",
         type: "number",
@@ -662,11 +686,11 @@ const EZ_KINDS = {
       },
       {
         key: "fine_mode",
-        label: "Fine tune mode",
+        label: "What the card's Fine position does",
         type: "select",
         choices: [
-          ["both", "Controls movement and fine tune"],
-          ["fine", "Fine tune only"],
+          ["both", "Movement and fine tune together"],
+          ["fine", "Fine tune channels only"],
         ],
         default: "both",
       },
@@ -1006,10 +1030,41 @@ function motionPad(device) {
   const block = el("div", { class: "ez-block" });
   const invertH = ezSetting(device, "invert_h", "") === "1";
   const invertV = ezSetting(device, "invert_v", "") === "1";
+  const invertHFine = ezSetting(device, "invert_h_fine", "") === "1";
+  const invertVFine = ezSetting(device, "invert_v_fine", "") === "1";
   const maxStep = Math.max(1, parseInt(ezSetting(device, "max_step", "10"), 10) || 10);
   const fineOnly = ezSetting(device, "fine_mode", "both") === "fine";
   const hasFineH = ezRoleOffset(device, "horizontal_fine") !== null;
   const hasFineV = ezRoleOffset(device, "vertical_fine") !== null;
+  const hasAnyFine = hasFineH || hasFineV;
+
+  // Which channels the stick is on right now. Position "move" is always coarse
+  // only; position "fine" does whatever the card was configured to mean by it.
+  // Kept in memory rather than saved: it is a way of working during a session,
+  // not a property of the fixture.
+  let stickMode = "move";
+
+  const modeRow = el("div", { class: "seg-row" });
+  const moveBtn = el("button", { type: "button", class: "seg on" }, ["Move"]);
+  const fineBtn = el("button", { type: "button", class: "seg" }, ["Fine"]);
+  const paintMode = () => {
+    moveBtn.classList.toggle("on", stickMode === "move");
+    fineBtn.classList.toggle("on", stickMode === "fine");
+  };
+  moveBtn.addEventListener("click", () => {
+    stickMode = "move";
+    paintMode();
+  });
+  fineBtn.addEventListener("click", () => {
+    stickMode = "fine";
+    paintMode();
+  });
+  modeRow.appendChild(moveBtn);
+  modeRow.appendChild(fineBtn);
+  if (!hasAnyFine) {
+    fineBtn.disabled = true;
+    fineBtn.title = "No fine channels are bound on this fixture";
+  }
 
   const pad = el("div", { class: "joystick", tabindex: "0" });
   const knob = el("div", { class: "joystick-knob" });
@@ -1028,29 +1083,46 @@ function motionPad(device) {
     return axis > 0 ? size : -size;
   };
 
-  const nudgeAxis = (coarseRole, fineRole, hasFine, delta) => {
+  // A fine channel that counts backwards on this fixture is corrected here, so
+  // everything above it can think in one direction.
+  const readFine = (role, inverted) => {
+    const raw = ezChannelValue(device, role);
+    return inverted ? 255 - raw : raw;
+  };
+  const writeFine = (role, value, inverted) => {
+    ezSend(device, role, inverted ? 255 - value : value, false);
+  };
+
+  const nudgeAxis = (coarseRole, fineRole, hasFine, fineInverted, delta) => {
     if (delta === 0) return;
-    if (fineOnly && hasFine) {
-      ezSend(device, fineRole, ezChannelValue(device, fineRole) + delta, false);
+
+    // Position "move": the coarse channel and nothing else, whatever fine
+    // channels exist.
+    if (stickMode === "move" || !hasFine) {
+      ezSend(device, coarseRole, ezChannelValue(device, coarseRole) + delta, false);
       return;
     }
-    if (hasFine) {
-      // Coarse and fine as one 16-bit value, so a step of one really is the
-      // smallest movement the fixture can make rather than 1/256th of travel.
-      const wide = ezChannelValue(device, coarseRole) * 256 + ezChannelValue(device, fineRole);
-      const next = Math.max(0, Math.min(65535, wide + delta));
-      ezSend(device, coarseRole, Math.floor(next / 256), false);
-      ezSend(device, fineRole, next % 256, false);
+
+    // Position "fine", card set to fine only.
+    if (fineOnly) {
+      writeFine(fineRole, Math.max(0, Math.min(255, readFine(fineRole, fineInverted) + delta)), fineInverted);
       return;
     }
-    ezSend(device, coarseRole, ezChannelValue(device, coarseRole) + delta, false);
+
+    // Position "fine", card set to both: coarse and fine as one 16-bit value,
+    // so a step of one is the smallest movement the fixture can make rather
+    // than 1/256th of its travel.
+    const wide = ezChannelValue(device, coarseRole) * 256 + readFine(fineRole, fineInverted);
+    const next = Math.max(0, Math.min(65535, wide + delta));
+    ezSend(device, coarseRole, Math.floor(next / 256), false);
+    writeFine(fineRole, next % 256, fineInverted);
   };
 
   const tick = () => {
     const dx = stepFor(invertH ? -vector.x : vector.x);
     const dy = stepFor(invertV ? -vector.y : vector.y);
-    nudgeAxis("horizontal", "horizontal_fine", hasFineH, dx);
-    nudgeAxis("vertical", "vertical_fine", hasFineV, dy);
+    nudgeAxis("horizontal", "horizontal_fine", hasFineH, invertHFine, dx);
+    nudgeAxis("vertical", "vertical_fine", hasFineV, invertVFine, dy);
   };
 
   const startTicking = () => {
@@ -1102,15 +1174,18 @@ function motionPad(device) {
     if (!key) return;
     e.preventDefault();
     // One press, one smallest step. Holding a key repeats through the browser.
-    nudgeAxis("horizontal", "horizontal_fine", hasFineH, (invertH ? -1 : 1) * key[0]);
-    nudgeAxis("vertical", "vertical_fine", hasFineV, (invertV ? -1 : 1) * key[1]);
+    nudgeAxis("horizontal", "horizontal_fine", hasFineH, invertHFine, (invertH ? -1 : 1) * key[0]);
+    nudgeAxis("vertical", "vertical_fine", hasFineV, invertVFine, (invertV ? -1 : 1) * key[1]);
   });
 
+  block.appendChild(modeRow);
   block.appendChild(pad);
   block.appendChild(
     el("p", { class: "hint" }, [
-      "Drag to move, further is faster. Double-click to centre. Arrow keys step once." +
-        (fineOnly ? " Fine tune only." : ""),
+      "Drag to move, further is faster. Double-click to centre. Arrow keys step once. " +
+        (hasAnyFine
+          ? "Fine drives " + (fineOnly ? "the fine channels alone." : "movement and fine together.")
+          : "No fine channels bound, so Fine is unavailable."),
     ])
   );
   return block;

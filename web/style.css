@@ -591,3 +591,17 @@ form { margin: 0; }
 }
 
 .lite-toggle { margin-top: 0.75rem; }
+
+/* Two-position stick mode, Move or Fine. */
+.seg-row { display: flex; gap: 0; margin: 0 auto 0.6rem auto; width: max-content; }
+.seg {
+  padding: 0.35rem 1rem;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.seg:first-child { border-radius: 6px 0 0 6px; }
+.seg:last-child { border-radius: 0 6px 6px 0; border-left: none; }
+.seg.on { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.seg:disabled { opacity: 0.45; cursor: not-allowed; }
