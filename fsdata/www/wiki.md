@@ -11,6 +11,7 @@ first-time setup.
   - [Command syntax](#command-syntax)
   - [Command reference](#command-reference)
 - [Channel types](#channel-types)
+- [Categories](#categories)
 - [Labels](#labels)
 - [API access control](#api-access-control)
 - [HTTP API](#http-api)
@@ -163,7 +164,7 @@ actually listen on" without needing a fixture defined first.
 
 | Command | What it does |
 |---|---|
-| `Set-device add name=<name>` | Create a fixture. The start channel is assigned automatically, right after the last address currently in use. |
+| `Set-device add name=<name> [channel=<start>] [category=<id>]` | Create a fixture. Without `channel=` the start channel lands right after the last address currently in use. `category=` takes an id from [Categories](#categories) and defaults to `other`. |
 | `Set-device add-channel device=<name> name=<ch> channel=<offset> mode=<mode>` | Add a channel. `channel=` is the offset within the fixture, not the DMX address. |
 | `Set-device del-channel name=<ch> [device=<name>]` | Remove a channel. If the name exists on several fixtures you must pass `device=`. |
 | `Set-device del device=<name>` | Delete a fixture. |
@@ -227,6 +228,40 @@ lighting position.
 
 Only `slider` and `button-switch` publish state back to MQTT. The other two are
 stateless by design, since a trigger has nothing to report between presses.
+
+## Categories
+
+Every fixture has exactly one category, chosen when it is created and editable
+afterwards. Unlike labels, the list is **fixed in the firmware** and not
+user-editable:
+
+| id | Shown as |
+|---|---|
+| `par` | PAR |
+| `bar` | LED bar |
+| `lyre` | Moving head |
+| `scanner` | Scanner |
+| `strobe` | Strobe |
+| `blinder` | Blinder |
+| `laser` | Laser |
+| `smoke` | Smoke and haze |
+| `dimmer` | Dimmer pack |
+| `effect` | Effect |
+| `other` | Other |
+
+The split is deliberate. A label answers "where is this in my rig" and is yours
+to invent; a category answers "what kind of machine is this", which the firmware
+and the UI can both reason about. That is why the vocabulary is closed: later
+work on the fixture editor keys off it, and it cannot key off names nobody has
+agreed on.
+
+Unknown ids fall back to `other` on load rather than being kept, so a
+hand-edited config cannot file a fixture under something nothing can filter.
+Adding a category means editing `src/categories.h` and reflashing; the list is
+served at `/api/categories` so the UI never duplicates it.
+
+`GET /api/categories` returns the table, `DEVICE_n_CATEGORY` sets it from `.env`,
+and `Set-device add name=<name> category=<id>` sets it from the console.
 
 ## Labels
 
@@ -319,6 +354,7 @@ MQTT. Values are clamped to 0 through 255. A missing `value` is treated as 0.
 | `GET` and `POST` | `/api/system` | Read or merge `system.json`: pins, hostname, hotspot, static IP |
 | `GET` and `POST` | `/api/mesh` | Read or merge `mesh.json`, work in progress, stored only |
 | `GET` | `/api/info` | Version, board, mDNS hostname, author, repository and wiki links |
+| `GET` | `/api/categories` | The fixed category vocabulary, as `[{"id":…, "name":…}]` |
 | `GET` | `/api/labels` | Every label, as `[{"id":…, "name":…, "color":…}]` |
 | `POST` | `/api/labels` | `{"name":…, "color":…}`, returns the created label |
 | `PUT` | `/api/labels/<label_id>` | Any of `name`, `color`, returns the updated label or `404` |

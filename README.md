@@ -225,9 +225,15 @@ Each card carries three icon actions in its top right corner:
 The round **+** button in the bottom right corner opens the same dialog for a
 new fixture, with the start channel already past everything currently patched.
 
-When labels exist, a row of chips sits above the fixtures. Selecting several
-widens the selection rather than narrowing it, so **Face** plus **Contre** shows
-both groups.
+Two rows of chips sit above the fixtures: fixture **categories** on top, your
+own **labels** below. Within a row, selecting several widens the selection, so
+**Face** plus **Contre** shows both groups. Between rows they combine, so adding
+**PAR** narrows that to the PARs among them.
+
+Categories are a fixed list in the firmware (PAR, LED bar, Moving head, Scanner,
+Strobe, Blinder, Laser, Smoke and haze, Dimmer pack, Effect, Other), picked when
+a fixture is created. Labels are yours to invent. The category row only appears
+once a rig actually spans more than one kind of machine.
 
 ![Devices page](docs/images/ui-home.png)
 

@@ -18,6 +18,7 @@
 <main>
   <!-- Fixtures and their live controls, one merged view. -->
   <section id="view-devices" class="view active">
+    <div id="category-filters" class="chip-bar"></div>
     <div id="label-filters" class="chip-bar"></div>
     <div id="device-grid"></div>
   </section>
@@ -307,6 +308,11 @@
       <div class="field">
         <label for="device-name">Name</label>
         <input type="text" id="device-name" name="name" required>
+      </div>
+      <div class="field">
+        <label for="device-category">Category</label>
+        <select id="device-category" name="category"></select>
+        <span class="hint">What kind of machine this is. Fixed list, unlike labels.</span>
       </div>
       <div class="field">
         <label for="device-start">Start channel</label>

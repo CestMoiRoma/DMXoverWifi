@@ -54,11 +54,18 @@ function iconButton(paths, title, onClick) {
 // ---- shared state ----
 
 let labelsCache = [];
+let categoriesCache = [];
 let activeFilters = new Set();
+let activeCategories = new Set();
 let boardInfo = {};
 
 function labelById(id) {
   return labelsCache.find((l) => l.id === id);
+}
+
+function categoryName(id) {
+  const found = categoriesCache.find((c) => c.id === id);
+  return found ? found.name : id;
 }
 
 // ---- navigation ----
@@ -123,9 +130,46 @@ function renderFilterChips(devices) {
   });
 }
 
-// A fixture matches when it carries any active label, so stacking chips widens
-// the selection rather than narrowing it to their intersection.
+function renderCategoryChips(devices) {
+  const bar = document.getElementById("category-filters");
+  bar.innerHTML = "";
+  // Only offer categories something is actually filed under, so the bar does not
+  // list eleven kinds of machine for a rig of three PARs.
+  const present = categoriesCache.filter((c) => devices.some((d) => d.category === c.id));
+  if (present.length < 2) return;
+
+  const all = el(
+    "button",
+    { type: "button", class: "chip cat" + (activeCategories.size ? "" : " on") },
+    ["All types"]
+  );
+  all.addEventListener("click", () => {
+    activeCategories.clear();
+    renderDevices();
+  });
+  bar.appendChild(all);
+
+  present.forEach((cat) => {
+    const on = activeCategories.has(cat.id);
+    const count = devices.filter((d) => d.category === cat.id).length;
+    const chip = el("button", { type: "button", class: "chip cat" + (on ? " on" : "") }, [
+      cat.name + " (" + count + ")",
+    ]);
+    chip.addEventListener("click", () => {
+      if (on) activeCategories.delete(cat.id);
+      else activeCategories.add(cat.id);
+      renderDevices();
+    });
+    bar.appendChild(chip);
+  });
+}
+
+// Categories and labels are independent facets: a fixture must satisfy both
+// bars, but within one bar the chips widen the selection rather than
+// intersecting. Picking Face and Contre shows both, picking PAR on top of them
+// narrows that to the PARs among them.
 function matchesFilters(device) {
+  if (activeCategories.size && !activeCategories.has(device.category)) return false;
   if (activeFilters.size === 0) return true;
   return (device.labels || []).some((id) => activeFilters.has(id));
 }
@@ -189,7 +233,9 @@ function deviceCard(device) {
   const head = el("div", { class: "card-head" });
   const title = el("div", { class: "card-title" }, [
     el("h3", {}, [device.name]),
-    el("span", { class: "card-sub" }, ["start ch. " + device.start_channel]),
+    el("span", { class: "card-sub" }, [
+      categoryName(device.category) + " · start ch. " + device.start_channel,
+    ]),
   ]);
   head.appendChild(title);
 
@@ -201,6 +247,7 @@ function deviceCard(device) {
       openDeviceModal(
         {
           name: device.name + " copy",
+          category: device.category,
           start_channel: Math.min(device.start_channel + span, 512),
           channels: device.channels,
           labels: device.labels,
@@ -236,7 +283,9 @@ function deviceCard(device) {
 
 async function renderDevices() {
   labelsCache = await api("/api/labels");
+  if (categoriesCache.length === 0) categoriesCache = await api("/api/categories");
   const devices = await api("/api/devices");
+  renderCategoryChips(devices);
   renderFilterChips(devices);
 
   const grid = document.getElementById("device-grid");
@@ -247,7 +296,7 @@ async function renderDevices() {
   }
   const shown = devices.filter(matchesFilters);
   if (shown.length === 0) {
-    grid.appendChild(el("p", { class: "empty" }, ["No fixture carries the selected labels."]));
+    grid.appendChild(el("p", { class: "empty" }, ["No fixture matches the selected filters."]));
     return;
   }
   shown.forEach((device) => grid.appendChild(deviceCard(device)));
@@ -307,11 +356,21 @@ function renderModalLabelPicker() {
 // `device` seeds the form, `id` decides the verb: an id edits that fixture in
 // place, null creates a new one. Duplicate is simply the second case seeded
 // from an existing fixture.
+function renderCategorySelect(selected) {
+  const select = document.getElementById("device-category");
+  select.innerHTML = "";
+  categoriesCache.forEach((cat) => {
+    select.appendChild(el("option", { value: cat.id }, [cat.name]));
+  });
+  select.value = selected || "other";
+}
+
 function openDeviceModal(device, id) {
   const form = document.getElementById("device-form");
   editingDeviceId = id;
   form.name.value = device ? device.name : "";
   form.start_channel.value = device ? device.start_channel : 1;
+  renderCategorySelect(device && device.category);
   modalLabels = new Set((device && device.labels) || []);
   document.getElementById("channel-rows").innerHTML = "";
   if (device) device.channels.forEach((c) => addChannelRow(c.offset, c.name, c.type));
@@ -337,6 +396,7 @@ document.addEventListener("keydown", (e) => {
 
 document.getElementById("add-device-fab").addEventListener("click", async () => {
   labelsCache = await api("/api/labels");
+  if (categoriesCache.length === 0) categoriesCache = await api("/api/categories");
   const devices = await api("/api/devices");
   // Land past the end of everything already patched, so a new fixture does not
   // silently share addresses with an existing one.
@@ -345,7 +405,10 @@ document.getElementById("add-device-fab").addEventListener("click", async () => 
     const span = d.channels.reduce((max, c) => Math.max(max, c.offset), 0);
     next = Math.max(next, d.start_channel + span);
   });
-  openDeviceModal({ name: "", start_channel: Math.min(next, 512), channels: [], labels: [] }, null);
+  openDeviceModal(
+    { name: "", category: "other", start_channel: Math.min(next, 512), channels: [], labels: [] },
+    null
+  );
   document.getElementById("device-form").name.value = "";
 });
 
@@ -362,6 +425,7 @@ document.getElementById("device-form").addEventListener("submit", async (e) => {
   });
   const payload = {
     name: form.name.value,
+    category: form.category.value,
     start_channel: parseInt(form.start_channel.value, 10),
     channels: channels,
     labels: Array.from(modalLabels),

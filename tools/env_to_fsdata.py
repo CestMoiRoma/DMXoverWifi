@@ -234,6 +234,9 @@ def devices_from_env(cfg, labels):
         devices.append({
             "id": "dev-env%s" % dev_n,
             "name": group["name"],
+            # Unknown ids are left as written: the firmware normalises them to
+            # "other" on load, and doing it here too would hide the typo.
+            "category": group.get("category", "other"),
             "start_channel": as_int(group.get("start_channel", 1), 1),
             "channels": channels,
             "labels": resolve_labels(group.get("labels", ""), labels),

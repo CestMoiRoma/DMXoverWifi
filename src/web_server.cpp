@@ -112,9 +112,7 @@ void DmxWebServer::registerRoutes() {
   onApi("/api/devices", HTTP_POST, [this]() {
     JsonDocument body;
     parseBody(body);
-    Device* d = _devices.addDevice(body["name"] | "", body["start_channel"] | 1,
-                                   body["channels"].as<JsonArrayConst>(),
-                                   body["labels"].as<JsonArrayConst>());
+    Device* d = _devices.addDeviceFromJson(body.as<JsonObjectConst>());
     _mqtt.publishDiscovery();
     JsonDocument out;
     _devices.deviceToJson(*d, out.to<JsonObject>(), true);
@@ -154,6 +152,13 @@ void DmxWebServer::registerRoutes() {
     JsonDocument out;
     out["ok"] = true;
     sendJson(200, out);
+  });
+
+  // -- categories (fixed vocabulary, read only) --
+  onApi("/api/categories", HTTP_GET, [this]() {
+    JsonDocument doc;
+    categoriesToJson(doc.to<JsonArray>());
+    sendJson(200, doc);
   });
 
   // -- labels --
@@ -490,6 +495,8 @@ String DmxWebServer::buildEnvText() {
     int i = 1;
     for (JsonObjectConst dev : devs) {
       out += "DEVICE_" + String(i) + "_NAME=" + (const char*)(dev["name"] | "") + "\n";
+      out += "DEVICE_" + String(i) + "_CATEGORY=" +
+             (const char*)(dev["category"] | DEFAULT_CATEGORY) + "\n";
       out += "DEVICE_" + String(i) + "_START_CHANNEL=" + String((int)(dev["start_channel"] | 1)) + "\n";
       // Labels travel by name, not by id: .env is meant to stay readable and
       // hand-editable, and the seeding script resolves the names back.

@@ -33,6 +33,7 @@ static Device deviceFromJson(JsonObjectConst d) {
   Device dev;
   dev.id = (const char*)(d["id"] | "");
   dev.name = (const char*)(d["name"] | "Device");
+  dev.category = normalizeCategory(String((const char*)(d["category"] | DEFAULT_CATEGORY)));
   dev.start_channel = d["start_channel"] | 1;
   for (JsonObjectConst c : d["channels"].as<JsonArrayConst>()) {
     dev.channels.push_back(channelFromJson(c));
@@ -63,6 +64,7 @@ void DeviceManager::save() {
 void DeviceManager::deviceToJson(const Device& d, JsonObject out, bool withValues) const {
   out["id"] = d.id;
   out["name"] = d.name;
+  out["category"] = d.category;
   out["start_channel"] = d.start_channel;
   JsonArray chans = out["channels"].to<JsonArray>();
   for (const Channel& c : d.channels) {
@@ -134,10 +136,21 @@ Device* DeviceManager::addDevice(const String& name, int startChannel, JsonArray
   return &_devices.back();
 }
 
+Device* DeviceManager::addDeviceFromJson(JsonObjectConst body) {
+  Device d = deviceFromJson(body);
+  d.id = makeId("dev");
+  _devices.push_back(d);
+  save();
+  return &_devices.back();
+}
+
 Device* DeviceManager::updateDevice(const String& id, JsonObjectConst data) {
   Device* d = find(id);
   if (!d) return nullptr;
   if (data["name"].is<const char*>()) d->name = (const char*)data["name"];
+  if (data["category"].is<const char*>()) {
+    d->category = normalizeCategory(String((const char*)data["category"]));
+  }
   if (!data["start_channel"].isNull()) d->start_channel = data["start_channel"].as<int>();
   if (data["channels"].is<JsonArrayConst>()) {
     d->channels.clear();

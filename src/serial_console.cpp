@@ -19,7 +19,9 @@ static const char* HELP_LINES[] = {
     "Set-System wifi-list                               - saved + visible networks",
     "Set-System mqtt-enable broker=<ip> user=<u> passwd=<p> [port=<n>] - same as Add-mqtt",
     "Set-System mqtt-disable                            - disable mqtt",
-    "Set-device add name=<name>                         - add a device",
+    "Set-device add name=<name> [channel=<start>] [category=<cat>] - add a device;"
+    " category is one of par, bar, lyre, scanner, strobe, blinder, laser, smoke, dimmer,"
+    " effect, other",
     "Set-device add-channel device=<name> name=<ch> channel=<offset> mode=<slider|button|momentary|switch>",
     "Set-device del-channel name=<ch> [device=<name>]   - remove a channel",
     "Set-device del device=<name>                       - remove a device",
@@ -293,9 +295,13 @@ void SerialConsole::cmdSetDevice(const String& rest) {
       fail("name required");
       return;
     }
-    int start = _devices.nextFreeStartChannel();
-    _devices.addDevice(name, start);
-    emit("device '" + name + "' added (start channel " + String(start) + ")");
+    int start = a.has("channel") ? a.get("channel").toInt() : _devices.nextFreeStartChannel();
+    String category = normalizeCategory(a.get("category", DEFAULT_CATEGORY));
+    Device* d = _devices.addDevice(name, start);
+    d->category = category;
+    _devices.updateDevice(d->id, JsonObjectConst());  // persist the category
+    emit("device '" + name + "' added (start channel " + String(start) + ", category " + category +
+         ")");
 
   } else if (sub == "add-channel") {
     String dev = a.get("device");

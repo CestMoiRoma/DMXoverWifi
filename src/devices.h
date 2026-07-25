@@ -4,6 +4,7 @@
 
 #include <vector>
 
+#include "categories.h"
 #include "dmx/dmx_driver.h"
 
 // A single DMX control within a fixture. `type` is one of:
@@ -20,6 +21,7 @@ struct Channel {
 struct Device {
   String id;
   String name = "Device";
+  String category = "other";  // one of categories.h, chosen at creation
   int start_channel = 1;
   std::vector<Channel> channels;
   std::vector<String> labels;
@@ -49,6 +51,10 @@ class DeviceManager {
   Device* addDevice(const String& name, int startChannel, JsonArrayConst channels);
   Device* addDevice(const String& name, int startChannel, JsonArrayConst channels,
                     JsonArrayConst labels);
+  // Builds a fixture from a whole API body, which keeps the parameter list from
+  // growing a slot every time a field is added. Any id in the body is ignored:
+  // the board mints its own on create.
+  Device* addDeviceFromJson(JsonObjectConst body);
   Device* updateDevice(const String& id, JsonObjectConst data);
   bool removeDevice(const String& id);
   bool removeDeviceByName(const String& name);
