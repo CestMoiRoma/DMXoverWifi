@@ -30,6 +30,7 @@ MANAGED = (
     "mqtt.json",
     "system.json",
     "mesh.json",
+    "labels.json",
     "devices.json",
 )
 
@@ -139,7 +140,35 @@ def mesh_from_env(cfg):
     }
 
 
-def devices_from_env(cfg):
+def labels_from_env(cfg):
+    """Collect LABEL_<n>_NAME/COLOR groups into label entries.
+
+    Ids are derived from the group number rather than random, so the same .env
+    always produces the same ids and the devices below can point at them.
+    """
+    groups = {}
+    for key, value in cfg.items():
+        if not key.startswith("LABEL_"):
+            continue
+        parts = key.split("_", 2)
+        if len(parts) != 3:
+            continue
+        groups.setdefault(parts[1], {})[parts[2].lower()] = value
+
+    out = []
+    for n in sorted(groups, key=as_int):
+        group = groups[n]
+        if not group.get("name"):
+            continue
+        out.append({
+            "id": "lbl-env%s" % n,
+            "name": group["name"],
+            "color": group.get("color", "#3b82f6"),
+        })
+    return out or None
+
+
+def devices_from_env(cfg, labels):
     """Collect DEVICE_<n>_* and DEVICE_<n>_CHANNEL_<m>_* groups into fixtures."""
     device_groups = {}
     channel_groups = {}  # (device_n, channel_m) -> {field: value}
@@ -188,8 +217,27 @@ def devices_from_env(cfg):
             "name": group["name"],
             "start_channel": as_int(group.get("start_channel", 1), 1),
             "channels": channels,
+            "labels": resolve_labels(group.get("labels", ""), labels),
         })
     return devices or None
+
+
+def resolve_labels(spec, labels):
+    """Turn a comma-separated list of label names into the matching label ids.
+
+    Names that match nothing are dropped rather than invented, so a typo shows
+    up as a missing chip instead of a fixture nobody can filter.
+    """
+    by_name = {l["name"].strip().lower(): l["id"] for l in (labels or [])}
+    out = []
+    for name in spec.split(","):
+        name = name.strip()
+        if not name:
+            continue
+        label_id = by_name.get(name.lower())
+        if label_id and label_id not in out:
+            out.append(label_id)
+    return out
 
 
 def main():
@@ -213,12 +261,14 @@ def main():
     is_esp8266 = env.subst("$PIOPLATFORM") == "espressif8266"  # noqa: F821
     default_tx_pin = "GPIO2" if is_esp8266 else "IO4"
 
+    labels = labels_from_env(cfg)
     generated = {
         "wifi_networks.json": wifi_from_env(cfg),
         "mqtt.json": mqtt_from_env(cfg),
         "system.json": system_from_env(cfg, default_tx_pin),
         "mesh.json": mesh_from_env(cfg),
-        "devices.json": devices_from_env(cfg),
+        "labels.json": labels,
+        "devices.json": devices_from_env(cfg, labels),
     }
 
     written = []

@@ -11,6 +11,7 @@ first-time setup.
   - [Command syntax](#command-syntax)
   - [Command reference](#command-reference)
 - [Channel types](#channel-types)
+- [Labels](#labels)
 - [HTTP API](#http-api)
 - [MQTT and Home Assistant](#mqtt-and-home-assistant)
 - [Timing and latency](#timing-and-latency)
@@ -205,6 +206,26 @@ lighting position.
 Only `slider` and `button-switch` publish state back to MQTT. The other two are
 stateless by design, since a trigger has nothing to report between presses.
 
+## Labels
+
+Labels are colour-coded tags stored in `labels.json`, each with an `id`, a
+`name` and a `color`. A fixture references them by id in its own `labels` array,
+and carries as many as you like, so one PAR can be both **Face** and **PAR**.
+
+The Devices page turns them into chips. Selecting several **widens** the
+selection rather than narrowing it: **Face** plus **Contre** shows every fixture
+carrying either, which is what a rig usually wants. The count on each chip is
+how many fixtures carry that label.
+
+Deleting a label strips its id from every fixture that referenced it, so nothing
+is left filtering under a chip that no longer exists. The fixtures themselves,
+and their channels, are untouched.
+
+In `.env` the relationship travels by **name** rather than by id, since that file
+is meant to stay readable: `LABEL_1_NAME` declares one, and `DEVICE_1_LABELS`
+takes a comma-separated list of those names. A name matching no label is dropped
+rather than invented, so a typo shows up as a missing chip.
+
 ## HTTP API
 
 Served on port 80 alongside the UI. JSON in, JSON out. There is no
@@ -224,9 +245,9 @@ A headless build (`WITH_WEBUI=0`) drops the page routes below but keeps every
 
 | Method | Route | Body and result |
 |---|---|---|
-| `GET` | `/api/devices` | Every fixture with its channels |
-| `POST` | `/api/devices` | `{"name":…, "start_channel":…, "channels":[{"offset":…,"name":…,"type":…}]}`, returns the created fixture |
-| `PUT` | `/api/devices/<device_id>` | Any of `name`, `start_channel`, `channels`, returns the updated fixture or `404` |
+| `GET` | `/api/devices` | Every fixture with its channels, each carrying its live `value` |
+| `POST` | `/api/devices` | `{"name":…, "start_channel":…, "channels":[{"offset":…,"name":…,"type":…}], "labels":[…]}`, returns the created fixture |
+| `PUT` | `/api/devices/<device_id>` | Any of `name`, `start_channel`, `channels`, `labels`, returns the updated fixture or `404` |
 | `DELETE` | `/api/devices/<device_id>` | `{"ok": true}` or `{"ok": false}` |
 | `POST` | `/api/devices/<device_id>/channel/<offset>` | `{"value": 0-255}`, returns `{"ok": true}` or `404` |
 
@@ -251,7 +272,13 @@ MQTT. Values are clamped to 0 through 255. A missing `value` is treated as 0.
 | `GET` and `POST` | `/api/mqtt` | Read or merge the MQTT config. A `POST` also restarts the client |
 | `GET` and `POST` | `/api/system` | Read or merge `system.json`: pins, hostname, hotspot, static IP |
 | `GET` and `POST` | `/api/mesh` | Read or merge `mesh.json`, work in progress, stored only |
-| `GET` | `/api/info` | Version, author, repository and wiki links, for the Info page |
+| `GET` | `/api/info` | Version, board, mDNS hostname, author, repository and wiki links |
+| `GET` | `/api/labels` | Every label, as `[{"id":…, "name":…, "color":…}]` |
+| `POST` | `/api/labels` | `{"name":…, "color":…}`, returns the created label |
+| `PUT` | `/api/labels/<label_id>` | Any of `name`, `color`, returns the updated label or `404` |
+| `DELETE` | `/api/labels/<label_id>` | Removes it and strips it from every fixture that carried it |
+| `GET` | `/api/config` | The whole live config as a `.json` download |
+| `POST` | `/api/config` | Restores a config file. Sections absent from the body are left alone |
 | `GET` | `/api/export-env` | The board's whole live config as a `.env` file, served as a download |
 
 `POST` merges into the existing config, so you can send a single key.
@@ -362,24 +389,33 @@ Static IP is applied when joining a network, and only when `sta_ip_mode` is
 `static` and both an address and a gateway are set. If the values do not parse,
 the board stays on DHCP rather than dropping off the network.
 
-> [!NOTE]
-> `hostname` is stored, editable in Settings, exported to `.env` and reported by
-> `get-status`, but nothing hands it to the radio yet, so it currently has no
-> effect on the network. Applying it and announcing `esp-dmx.local` over mDNS is
-> on the [roadmap](README.md#reliability-and-operations).
+`hostname` is handed to the radio and announced over mDNS, so the board answers
+on `<hostname>.local` as well as on whatever address the router gave it. It is
+sanitised first, since DNS labels allow only letters, digits and hyphens:
+anything else folds to a hyphen, and an empty result falls back to `esp-dmx`. A
+change takes effect on the next reboot, when the radio comes up again.
 
 To wipe a setting back to defaults, delete its `/data/*.json` file (for example
 by reflashing the LittleFS image, or over a future OTA) and reboot.
 
 ## Exporting config
 
-**Settings**, **Configuration**, **Export .env**, or fetch `/api/export-env`
-directly, hands the board's whole live config back as a readable `.env` file:
-saved networks, MQTT, the system group including static IP, mesh settings, and
-every fixture with its channels.
+Two formats, answering two different questions.
 
-It is a human-readable backup and a way to snapshot a working board before
-experimenting.
+**Settings**, **Config**, **Save .json**, or `GET /api/config`, hands back the
+whole live config in one file: system, mesh, saved networks, MQTT, labels and
+every fixture. **Load .json** on the same page posts it back and applies it
+immediately, section by section. A file missing a section leaves that section
+alone, so a partial config is a valid patch rather than a wipe. Pin changes need
+a reboot, since the DMX driver reads them once at startup.
+
+**Export .env** on the same page, or `GET /api/export-env`, hands back the same
+config as a readable `.env` file: saved networks, MQTT, the system group
+including static IP, mesh settings, labels, and every fixture with its channels.
+
+Reach for the `.json` to snapshot a working board before experimenting, or to
+clone one board onto another. Reach for the `.env` when you want the config to
+survive a reflash, since that is the one the build reads.
 
 ## Reseeding config from `.env`
 

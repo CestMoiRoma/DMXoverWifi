@@ -27,14 +27,24 @@ class WifiManager {
   bool tryConnect(const String& ssid, const String& password, uint32_t timeoutMs = 8000);
   void startAp(const String& ssid, const String& password, const String& ip);
 
+  // Services mDNS. The ESP8266 responder needs pumping; the ESP32 one does not,
+  // so this is a no-op there.
+  void loop();
+
   void statusToJson(JsonObject out) const;
   const String& mode() const { return _mode; }
+  const String& hostname() const { return _hostname; }
 
  private:
   void save();
   void applyStaticIp();
+  // Reads system.json, sanitises the hostname and hands it to the radio. Must
+  // run after WiFi.mode() and before WiFi.begin() to take effect.
+  void applyHostname();
+  void startMdns();
 
   std::vector<WifiNet> _networks;
   String _mode;    // "" | "sta" | "ap"
   String _apSsid;
+  String _hostname;
 };

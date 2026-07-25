@@ -11,6 +11,7 @@ using WebServerClass = WebServer;
 #endif
 
 #include "devices.h"
+#include "labels.h"
 #include "mqtt_manager.h"
 #include "wifi_manager.h"
 
@@ -19,8 +20,8 @@ using WebServerClass = WebServer;
 // from the main loop, mirroring the CircuitPython poll model.
 class DmxWebServer {
  public:
-  DmxWebServer(DeviceManager& devices, WifiManager& wifi, MqttManager& mqtt)
-      : _devices(devices), _wifi(wifi), _mqtt(mqtt), _server(80) {}
+  DmxWebServer(DeviceManager& devices, LabelStore& labels, WifiManager& wifi, MqttManager& mqtt)
+      : _devices(devices), _labels(labels), _wifi(wifi), _mqtt(mqtt), _server(80) {}
 
   void begin();
   void handleClient() { _server.handleClient(); }
@@ -35,7 +36,12 @@ class DmxWebServer {
   bool serveFile(const char* path, const char* contentType);
   String buildEnvText();
 
+  // Whole-config snapshot and restore, the .json counterpart of the .env export.
+  void buildConfigJson(JsonDocument& out);
+  void applyConfigJson(JsonObjectConst in);
+
   DeviceManager& _devices;
+  LabelStore& _labels;
   WifiManager& _wifi;
   MqttManager& _mqtt;
   WebServerClass _server;

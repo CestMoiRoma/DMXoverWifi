@@ -1,5 +1,6 @@
 #include "devices.h"
 
+#include "ids.h"
 #include "settings_store.h"
 
 static bool isValidType(const String& t) {
@@ -10,24 +11,35 @@ String normalizeChannelType(const String& value) {
   return isValidType(value) ? value : String("slider");
 }
 
-static String newId() {
-  uint32_t r;
-#if defined(ESP8266)
-  r = RANDOM_REG32;
-#else
-  r = esp_random();
-#endif
-  char buf[12];
-  snprintf(buf, sizeof(buf), "dev-%06x", (unsigned)(r & 0xFFFFFF));
-  return String(buf);
-}
-
 static Channel channelFromJson(JsonObjectConst c) {
   Channel ch;
   ch.offset = c["offset"] | 1;
   ch.name = (const char*)(c["name"] | "Channel");
   ch.type = normalizeChannelType(String((const char*)(c["type"] | "slider")));
   return ch;
+}
+
+// Labels are stored as a bare array of ids. Unknown ids are kept rather than
+// dropped: a config imported before its labels would otherwise lose them.
+static void labelsFromJson(JsonArrayConst in, std::vector<String>& out) {
+  out.clear();
+  for (JsonVariantConst v : in) {
+    const char* id = v.as<const char*>();
+    if (id && *id) out.push_back(String(id));
+  }
+}
+
+static Device deviceFromJson(JsonObjectConst d) {
+  Device dev;
+  dev.id = (const char*)(d["id"] | "");
+  dev.name = (const char*)(d["name"] | "Device");
+  dev.start_channel = d["start_channel"] | 1;
+  for (JsonObjectConst c : d["channels"].as<JsonArrayConst>()) {
+    dev.channels.push_back(channelFromJson(c));
+  }
+  labelsFromJson(d["labels"].as<JsonArrayConst>(), dev.labels);
+  if (!dev.id.length()) dev.id = makeId("dev");
+  return dev;
 }
 
 void DeviceManager::begin() { load(); }
@@ -37,14 +49,7 @@ void DeviceManager::load() {
   settings_store::load("devices.json", doc);
   _devices.clear();
   for (JsonObjectConst d : doc.as<JsonArrayConst>()) {
-    Device dev;
-    dev.id = (const char*)(d["id"] | "");
-    dev.name = (const char*)(d["name"] | "Device");
-    dev.start_channel = d["start_channel"] | 1;
-    for (JsonObjectConst c : d["channels"].as<JsonArrayConst>()) {
-      dev.channels.push_back(channelFromJson(c));
-    }
-    _devices.push_back(dev);
+    _devices.push_back(deviceFromJson(d));
   }
 }
 
@@ -55,7 +60,7 @@ void DeviceManager::save() {
   settings_store::save("devices.json", doc);
 }
 
-void DeviceManager::deviceToJson(const Device& d, JsonObject out) const {
+void DeviceManager::deviceToJson(const Device& d, JsonObject out, bool withValues) const {
   out["id"] = d.id;
   out["name"] = d.name;
   out["start_channel"] = d.start_channel;
@@ -65,12 +70,15 @@ void DeviceManager::deviceToJson(const Device& d, JsonObject out) const {
     co["offset"] = c.offset;
     co["name"] = c.name;
     co["type"] = c.type;
+    if (withValues) co["value"] = getValue(d, c);
   }
+  JsonArray labels = out["labels"].to<JsonArray>();
+  for (const String& id : d.labels) labels.add(id);
 }
 
-void DeviceManager::devicesToJson(JsonArray out) const {
+void DeviceManager::devicesToJson(JsonArray out, bool withValues) const {
   for (const Device& d : _devices) {
-    deviceToJson(d, out.add<JsonObject>());
+    deviceToJson(d, out.add<JsonObject>(), withValues);
   }
 }
 
@@ -101,7 +109,7 @@ int DeviceManager::nextFreeStartChannel() {
 
 Device* DeviceManager::addDevice(const String& name, int startChannel) {
   Device d;
-  d.id = newId();
+  d.id = makeId("dev");
   d.name = name;
   d.start_channel = startChannel;
   _devices.push_back(d);
@@ -110,11 +118,17 @@ Device* DeviceManager::addDevice(const String& name, int startChannel) {
 }
 
 Device* DeviceManager::addDevice(const String& name, int startChannel, JsonArrayConst channels) {
+  return addDevice(name, startChannel, channels, JsonArrayConst());
+}
+
+Device* DeviceManager::addDevice(const String& name, int startChannel, JsonArrayConst channels,
+                                 JsonArrayConst labels) {
   Device d;
-  d.id = newId();
+  d.id = makeId("dev");
   d.name = name;
   d.start_channel = startChannel;
   for (JsonObjectConst c : channels) d.channels.push_back(channelFromJson(c));
+  labelsFromJson(labels, d.labels);
   _devices.push_back(d);
   save();
   return &_devices.back();
@@ -131,8 +145,31 @@ Device* DeviceManager::updateDevice(const String& id, JsonObjectConst data) {
       d->channels.push_back(channelFromJson(c));
     }
   }
+  if (data["labels"].is<JsonArrayConst>()) {
+    labelsFromJson(data["labels"].as<JsonArrayConst>(), d->labels);
+  }
   save();
   return d;
+}
+
+void DeviceManager::dropLabel(const String& labelId) {
+  bool changed = false;
+  for (Device& d : _devices) {
+    for (size_t i = 0; i < d.labels.size(); i++) {
+      if (d.labels[i] == labelId) {
+        d.labels.erase(d.labels.begin() + i);
+        changed = true;
+        break;
+      }
+    }
+  }
+  if (changed) save();
+}
+
+void DeviceManager::replaceAll(JsonArrayConst in) {
+  _devices.clear();
+  for (JsonObjectConst d : in) _devices.push_back(deviceFromJson(d));
+  save();
 }
 
 bool DeviceManager::removeDevice(const String& id) {

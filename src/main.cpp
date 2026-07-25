@@ -4,6 +4,7 @@
 #include "config.h"
 #include "devices.h"
 #include "dmx/dmx_driver.h"
+#include "labels.h"
 #include "mqtt_manager.h"
 #include "serial_console.h"
 #include "settings_store.h"
@@ -13,9 +14,10 @@
 
 static DmxDriver dmx;
 static DeviceManager deviceManager(dmx);
+static LabelStore labelStore;
 static WifiManager wifiManager;
 static MqttManager mqttManager(deviceManager);
-static DmxWebServer webServer(deviceManager, wifiManager, mqttManager);
+static DmxWebServer webServer(deviceManager, labelStore, wifiManager, mqttManager);
 static SerialConsole serialConsole(deviceManager, wifiManager, mqttManager);
 
 void setup() {
@@ -34,6 +36,7 @@ void setup() {
   dmx.begin(txPin, dirPin);
 
   deviceManager.begin();
+  labelStore.begin();
   wifiManager.begin();
   mqttManager.begin();
   serialConsole.begin();
@@ -53,6 +56,7 @@ void setup() {
 
 void loop() {
   webServer.handleClient();
+  wifiManager.loop();
   mqttManager.loop();
   dmx.refreshIfDue();
   serialConsole.poll();

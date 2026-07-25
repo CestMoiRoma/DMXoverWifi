@@ -15,12 +15,14 @@ struct Channel {
 };
 
 // A named group of channels mapped onto a contiguous DMX address range starting
-// at start_channel.
+// at start_channel. `labels` holds LabelStore ids, and a fixture may carry
+// several so it can match more than one filter chip.
 struct Device {
   String id;
   String name = "Device";
   int start_channel = 1;
   std::vector<Channel> channels;
+  std::vector<String> labels;
 
   int addressFor(const Channel& c) const { return start_channel + c.offset - 1; }
 };
@@ -41,9 +43,17 @@ class DeviceManager {
 
   Device* addDevice(const String& name, int startChannel);
   Device* addDevice(const String& name, int startChannel, JsonArrayConst channels);
+  Device* addDevice(const String& name, int startChannel, JsonArrayConst channels,
+                    JsonArrayConst labels);
   Device* updateDevice(const String& id, JsonObjectConst data);
   bool removeDevice(const String& id);
   bool removeDeviceByName(const String& name);
+
+  // Strips a deleted label from every fixture that carried it.
+  void dropLabel(const String& labelId);
+
+  // Replaces the whole fixture list, used by the config import.
+  void replaceAll(JsonArrayConst in);
 
   // Returns the added channel, or nullptr with `error` set when the device is
   // unknown.
@@ -59,9 +69,11 @@ class DeviceManager {
   Channel* setValue(const String& deviceId, int offset, int value);
   uint8_t getValue(const Device& d, const Channel& c) const;
 
-  // Serialization for the REST API.
-  void deviceToJson(const Device& d, JsonObject out) const;
-  void devicesToJson(JsonArray out) const;
+  // Serialization. `withValues` adds each channel's live DMX value, which the
+  // API wants so the UI can show real slider positions, and which persistence
+  // does not: devices.json describes the rig, not the current look.
+  void deviceToJson(const Device& d, JsonObject out, bool withValues = false) const;
+  void devicesToJson(JsonArray out, bool withValues = false) const;
 
  private:
   void load();

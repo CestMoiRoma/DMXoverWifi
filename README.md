@@ -182,7 +182,7 @@ described above, and the board joins it on the first boot.
 
 ### 5. Add a fixture
 
-Open **Device Manager**, give the fixture a name and a DMX start channel, then
+Press the round **+** button, give the fixture a name and a DMX start channel, then
 add its channels. A channel's *offset* is relative to the start channel, so a
 fixture starting at 10 with a channel at offset 3 drives DMX address 12. Its
 controls then appear on **Home**.
@@ -208,45 +208,52 @@ environment is `s2mini`.
 
 ## The web UI
 
-### Home
+### Devices
 
-Every configured fixture, with the right control per channel. Moving a fader
-writes the DMX buffer straight away.
+Every fixture with the right control per channel, and the tools to manage them,
+on one page. Moving a fader writes the DMX buffer straight away, and the
+controls open at the values the board is actually holding rather than at zero.
 
-![Home page](docs/images/ui-home.png)
+Each card carries three icon actions in its top right corner:
 
-### Device Manager
+| Icon | Does |
+|---|---|
+| Gear | Opens the fixture in the edit dialog and saves over it |
+| Plus | Opens a copy in the dialog, preselecting the first start channel past the end of the source so the copy does not fight it for the same DMX addresses |
+| Bin | Deletes the fixture, after a confirmation |
 
-Create, inspect, edit, duplicate and delete fixtures. Channels take an offset, a
-name and a type.
+The round **+** button in the bottom right corner opens the same dialog for a
+new fixture, with the start channel already past everything currently patched.
 
-**Edit** loads a fixture back into the form and saves over it. **Duplicate**
-loads a copy into the form instead, leaving the original untouched until you
-press Create, and preselects the first start channel past the end of the source
-so the copy does not fight it for the same DMX addresses. Both are handy for a
-rig of identical fixtures: build one, duplicate it, move the start channel.
+When labels exist, a row of chips sits above the fixtures. Selecting several
+widens the selection rather than narrowing it, so **Face** plus **Contre** shows
+both groups.
 
-![Device Manager page](docs/images/ui-devices.png)
+![Devices page](docs/images/ui-home.png)
 
 ### Settings
 
-Saved networks with priorities and a scanner, the full MQTT and Home Assistant
-configuration, DMX pin assignments, hotspot credentials, static IP settings, and
-the work-in-progress parent and child section. **Export .env** hands the whole
-live config back as a readable file you can keep as a backup.
+Six sub-pages:
+
+- **Config** saves and restores the board's whole live config as a `.json` file,
+  and sets the DMX TX and DE/RE pins. The pin fields are hidden on the ESP8266,
+  where the output is nailed to Serial1 on GPIO2. The legacy `.env` export lives
+  here too.
+- **Labels** creates, renames, recolours and removes tags. Removing one clears it
+  from every fixture that carried it, leaving their channels alone.
+- **WiFi** holds the saved networks with priorities and a scanner, the hostname,
+  DHCP or static addressing, and the fallback hotspot credentials.
+- **MQTT** is the full broker and Home Assistant discovery configuration.
+- **Parent/Child** is the work-in-progress mesh section, stored only.
+- **Info** shows the firmware version, the board, the mDNS name, the author, the
+  repository and the serial console reference. The wiki link works offline too,
+  because a copy of `WIKI.md` ships in the LittleFS image.
 
 ![Settings page](docs/images/ui-settings.png)
 
-### Info
-
-Firmware version, author, repository, and the serial console reference. The wiki
-link works offline too, because a copy of `WIKI.md` ships in the LittleFS image.
-
-![Info page](docs/images/ui-info.png)
-
 ## Channel types
 
-Every channel picks one of four behaviours, set in Device Manager or over serial
+Every channel picks one of four behaviours, set in the fixture dialog or over serial
 with `mode=`.
 
 | Type | On the Home page | Sends | In Home Assistant |
@@ -311,6 +318,8 @@ src/
     dmx_backend_esp32.cpp    ESP32 transmit path (adapter over esp_dmx)
     dmx_backend_esp8266.cpp  ESP8266 transmit path (adapter over ESPDMX, Serial1)
   devices.{h,cpp}       Fixture and channel model, persistence, DMX addressing
+  labels.{h,cpp}        Colour-coded tags fixtures reference by id
+  ids.h                 Short prefixed random ids for fixtures and labels
   web_server.{h,cpp}    HTTP routes: the static UI plus the JSON API
   wifi_manager.{h,cpp}  Saved-network database, priority connect, AP fallback
   mqtt_manager.{h,cpp}  MQTT client and Home Assistant auto-discovery
@@ -415,10 +424,6 @@ were already on the [ESPDMX](https://github.com/CestMoiRoma/ESPDMX) roadmap.
 
 ### Reliability and operations
 
-- **Apply the hostname, and announce it over mDNS.** The hostname is already
-  stored, editable in Settings and exported to `.env`, but nothing hands it to
-  the radio yet. Setting it and advertising `esp-dmx.local` would end the hunt
-  for whatever address the router handed out.
 - **Remember the last look.** The DMX buffer starts at zero on every boot, so a
   power blip blacks out the rig until someone opens the UI. An explicit save of
   the current state as the boot state avoids that.

@@ -14,7 +14,8 @@ static String path(const char* name) {
 // DEFAULTS table.
 static void seedDefault(const char* name, JsonDocument& doc) {
   doc.clear();
-  if (strcmp(name, "wifi_networks.json") == 0 || strcmp(name, "devices.json") == 0) {
+  if (strcmp(name, "wifi_networks.json") == 0 || strcmp(name, "devices.json") == 0 ||
+      strcmp(name, "labels.json") == 0) {
     doc.to<JsonArray>();  // empty list
   } else if (strcmp(name, "mqtt.json") == 0) {
     doc["enabled"] = false;

@@ -59,17 +59,18 @@ void DmxWebServer::registerRoutes() {
   // -- devices --
   _server.on("/api/devices", HTTP_GET, [this]() {
     JsonDocument doc;
-    _devices.devicesToJson(doc.to<JsonArray>());
+    _devices.devicesToJson(doc.to<JsonArray>(), true);
     sendJson(200, doc);
   });
   _server.on("/api/devices", HTTP_POST, [this]() {
     JsonDocument body;
     parseBody(body);
     Device* d = _devices.addDevice(body["name"] | "", body["start_channel"] | 1,
-                                   body["channels"].as<JsonArrayConst>());
+                                   body["channels"].as<JsonArrayConst>(),
+                                   body["labels"].as<JsonArrayConst>());
     _mqtt.publishDiscovery();
     JsonDocument out;
-    _devices.deviceToJson(*d, out.to<JsonObject>());
+    _devices.deviceToJson(*d, out.to<JsonObject>(), true);
     sendJson(200, out);
   });
   _server.on(UriBraces("/api/devices/{}"), HTTP_PUT, [this]() {
@@ -82,7 +83,7 @@ void DmxWebServer::registerRoutes() {
     }
     _mqtt.publishDiscovery();
     JsonDocument out;
-    _devices.deviceToJson(*d, out.to<JsonObject>());
+    _devices.deviceToJson(*d, out.to<JsonObject>(), true);
     sendJson(200, out);
   });
   _server.on(UriBraces("/api/devices/{}"), HTTP_DELETE, [this]() {
@@ -105,6 +106,43 @@ void DmxWebServer::registerRoutes() {
     _mqtt.publishState(id, offset, value);
     JsonDocument out;
     out["ok"] = true;
+    sendJson(200, out);
+  });
+
+  // -- labels --
+  _server.on("/api/labels", HTTP_GET, [this]() {
+    JsonDocument doc;
+    _labels.labelsToJson(doc.to<JsonArray>());
+    sendJson(200, doc);
+  });
+  _server.on("/api/labels", HTTP_POST, [this]() {
+    JsonDocument body;
+    parseBody(body);
+    Label* l = _labels.add(body["name"] | "", body["color"] | "");
+    JsonDocument out;
+    _labels.labelToJson(*l, out.to<JsonObject>());
+    sendJson(200, out);
+  });
+  _server.on(UriBraces("/api/labels/{}"), HTTP_PUT, [this]() {
+    JsonDocument body;
+    parseBody(body);
+    Label* l = _labels.update(_server.pathArg(0), body.as<JsonObjectConst>());
+    if (!l) {
+      sendError(404, "not found");
+      return;
+    }
+    JsonDocument out;
+    _labels.labelToJson(*l, out.to<JsonObject>());
+    sendJson(200, out);
+  });
+  _server.on(UriBraces("/api/labels/{}"), HTTP_DELETE, [this]() {
+    String id = _server.pathArg(0);
+    bool ok = _labels.remove(id);
+    // A fixture holding a dangling id would keep filtering under a chip that no
+    // longer exists, so clear it everywhere.
+    if (ok) _devices.dropLabel(id);
+    JsonDocument out;
+    out["ok"] = ok;
     sendJson(200, out);
   });
 
@@ -192,6 +230,10 @@ void DmxWebServer::registerRoutes() {
     doc["repo"] = REPO_URL;
     doc["wiki_online"] = String(REPO_URL) + "/blob/main/WIKI.md";
     doc["wiki_local"] = "/wiki.md";
+    // The UI hides the DMX pin fields on the ESP8266, where the backend is
+    // wired to Serial1/GPIO2 and the pin setting has no effect.
+    doc["board"] = BOARD_NAME;
+    doc["hostname"] = _wifi.hostname();
     sendJson(200, doc);
   });
 
@@ -201,7 +243,85 @@ void DmxWebServer::registerRoutes() {
     _server.send(200, "text/plain", buildEnvText());
   });
 
+  // -- whole config as .json, and restoring one --
+  _server.on("/api/config", HTTP_GET, [this]() {
+    JsonDocument doc;
+    buildConfigJson(doc);
+    _server.sendHeader("Content-Disposition", "attachment; filename=config.json");
+    String out;
+    serializeJson(doc, out);
+    _server.send(200, "application/json", out);
+  });
+  _server.on("/api/config", HTTP_POST, [this]() {
+    JsonDocument body;
+    parseBody(body);
+    if (!body.is<JsonObject>()) {
+      sendError(400, "expected a config object");
+      return;
+    }
+    applyConfigJson(body.as<JsonObjectConst>());
+    JsonDocument out;
+    out["ok"] = true;
+    out["reboot_required"] = true;
+    sendJson(200, out);
+  });
+
   _server.onNotFound([this]() { sendError(404, "not found"); });
+}
+
+// ---- .json config snapshot and restore ----
+//
+// The .env export and this one answer different questions. .env pre-fills a
+// board at flash time through tools/env_to_fsdata.py and stays human-editable;
+// this one round-trips the whole live config through the UI on a running board,
+// labels included, without touching the build.
+
+static void copySection(JsonDocument& out, const char* key, const char* file) {
+  JsonDocument tmp;
+  settings_store::load(file, tmp);
+  out[key].set(tmp.as<JsonVariantConst>());
+}
+
+void DmxWebServer::buildConfigJson(JsonDocument& out) {
+  out["version"] = FW_VERSION;
+  out["board"] = BOARD_NAME;
+  copySection(out, "system", "system.json");
+  copySection(out, "mesh", "mesh.json");
+  _wifi.networksToJson(out["wifi_networks"].to<JsonArray>());
+  _mqtt.copyConfigTo(out["mqtt"].to<JsonObject>());
+  _labels.labelsToJson(out["labels"].to<JsonArray>());
+  _devices.devicesToJson(out["devices"].to<JsonArray>());
+}
+
+// Merges one object section over what is already stored, so a partial config
+// file only overrides the keys it actually carries.
+static void mergeSection(JsonObjectConst in, const char* file) {
+  JsonDocument cfg;
+  settings_store::load(file, cfg);
+  for (JsonPairConst kv : in) cfg[kv.key()] = kv.value();
+  settings_store::save(file, cfg);
+}
+
+void DmxWebServer::applyConfigJson(JsonObjectConst in) {
+  if (in["system"].is<JsonObjectConst>()) mergeSection(in["system"].as<JsonObjectConst>(), "system.json");
+  if (in["mesh"].is<JsonObjectConst>()) mergeSection(in["mesh"].as<JsonObjectConst>(), "mesh.json");
+
+  if (in["wifi_networks"].is<JsonArrayConst>()) {
+    JsonDocument nets;
+    nets.set(in["wifi_networks"]);
+    settings_store::save("wifi_networks.json", nets);
+    _wifi.reloadNetworks();
+  }
+  if (in["mqtt"].is<JsonObjectConst>()) {
+    _mqtt.setConfig(in["mqtt"].as<JsonObjectConst>());
+    _mqtt.start();
+  }
+  // Labels first: the fixtures that follow refer to them by id.
+  if (in["labels"].is<JsonArrayConst>()) _labels.replaceAll(in["labels"].as<JsonArrayConst>());
+  if (in["devices"].is<JsonArrayConst>()) {
+    _devices.replaceAll(in["devices"].as<JsonArrayConst>());
+    _mqtt.publishDiscovery();
+  }
 }
 
 // ---- .env export ----
@@ -260,6 +380,18 @@ String DmxWebServer::buildEnvText() {
   out += String("MESH_SSID=") + (const char*)(mesh["ssid"] | "") + "\n";
   out += String("MESH_PASSWORD=") + (const char*)(mesh["password"] | "") + "\n\n";
 
+  const std::vector<Label>& labels = _labels.labels();
+  if (!labels.empty()) {
+    out += "# --- Labels ---\n";
+    int i = 1;
+    for (const Label& l : labels) {
+      out += "LABEL_" + String(i) + "_NAME=" + l.name + "\n";
+      out += "LABEL_" + String(i) + "_COLOR=" + l.color + "\n";
+      i++;
+    }
+    out += "\n";
+  }
+
   JsonDocument devices;
   settings_store::load("devices.json", devices);
   JsonArrayConst devs = devices.as<JsonArrayConst>();
@@ -269,6 +401,18 @@ String DmxWebServer::buildEnvText() {
     for (JsonObjectConst dev : devs) {
       out += "DEVICE_" + String(i) + "_NAME=" + (const char*)(dev["name"] | "") + "\n";
       out += "DEVICE_" + String(i) + "_START_CHANNEL=" + String((int)(dev["start_channel"] | 1)) + "\n";
+      // Labels travel by name, not by id: .env is meant to stay readable and
+      // hand-editable, and the seeding script resolves the names back.
+      String labelNames;
+      for (JsonVariantConst v : dev["labels"].as<JsonArrayConst>()) {
+        const char* id = v.as<const char*>();
+        if (!id) continue;
+        Label* l = _labels.find(String(id));
+        if (!l) continue;
+        if (labelNames.length()) labelNames += ",";
+        labelNames += l->name;
+      }
+      if (labelNames.length()) out += "DEVICE_" + String(i) + "_LABELS=" + labelNames + "\n";
       int j = 1;
       for (JsonObjectConst ch : dev["channels"].as<JsonArrayConst>()) {
         String p = "DEVICE_" + String(i) + "_CHANNEL_" + String(j);
