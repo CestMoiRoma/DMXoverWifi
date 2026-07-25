@@ -268,6 +268,30 @@ Six sub-pages:
 
 ![Settings page](docs/images/ui-settings.png)
 
+## Driving it over USB, with no radio at all
+
+`Set-System wifi-toggle off`, or `WIFI_ENABLED=false` in `.env`, stops the board
+bringing the radio up: no web server, no mDNS, no MQTT. A rig driven from a
+laptop at front of house has no reason to broadcast, and this is how you say so.
+
+The control surface then comes from the desktop app, which mirrors the web UI:
+
+```bash
+python tools/dmx_desktop.py            # finds the board's port itself
+python tools/dmx_desktop.py --port COM5
+```
+
+It needs `pyserial`, and Tkinter, which ships with CPython on Windows and macOS
+and is usually a separate `python3-tk` package on Linux. Note that PlatformIO's
+own bundled Python has no Tkinter: run it with your system Python.
+
+Two protocols share the one link because they want opposite things.
+Configuration is read once through the console's `Get-Config`, which answers
+with a line of JSON: readable, easy to debug, and speed is irrelevant. Channel
+values go out as [binary frames](WIKI.md#binary-serial-protocol), which measured
+about eleven times the update rate of the equivalent text command on an ESP32-S2
+because they skip both the bytes and the string parsing.
+
 ## Channel types
 
 Every channel picks one of four behaviours, set in the fixture dialog or over serial
@@ -351,6 +375,7 @@ fsdata/
 
 tools/
   env_to_fsdata.py      Pre-build script: `.env` to `fsdata/data/*.json`
+  dmx_desktop.py        Tkinter control surface driving the board over USB
 
 .env.example            Every key the seeding step understands
 docs/images/            Wiring schematic and UI screenshots

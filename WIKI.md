@@ -10,6 +10,7 @@ first-time setup.
   - [Opening a session](#opening-a-session)
   - [Command syntax](#command-syntax)
   - [Command reference](#command-reference)
+- [Binary serial protocol](#binary-serial-protocol)
 - [Channel types](#channel-types)
 - [Categories](#categories)
 - [Labels](#labels)
@@ -192,6 +193,7 @@ OK channel 'Lamp' added to 'PAR LED' (offset 2, button-switch)
 | `get-status wifi` | Mode (`sta` or `ap`), SSID, address |
 | `get-status mqtt` | Enabled, connected, broker |
 | `get-status devices` | One line per fixture, with its start channel and channel count |
+| `Get-Config` | Fixtures with their live values, the label table and the category vocabulary, as one line of JSON. Meant for tooling, not for reading |
 | `get-status device name=<name>` | Every channel of one fixture, with its live DMX value |
 | `get-status channel channel=<ch> [device=<name>]` | One channel's offset, mode and live value |
 | `get-status mesh` | Stored mesh role and SSID (work in progress) |
@@ -214,6 +216,52 @@ OK   2: Lamp (button-switch) = 0
 |---|---|
 | `Reboot` | Restart the board |
 | `Help` | Print the built-in command summary |
+
+## Binary serial protocol
+
+The text console is fine for configuring a board and hopeless for driving one.
+`Set-Value address=4 value=200` is 30 bytes and a string parse for a single DMX
+slot, which a dragged fader would send hundreds of times a second. Measured on
+an ESP32-S2, 300 updates to one channel:
+
+| | Bytes per update | Updates per second |
+|---|---|---|
+| `Set-Value` text command | 30 | 81 |
+| Binary frame | 7 | 914 |
+
+So binary frames share the same link, told apart by a start byte the text
+protocol never begins a line with. A `0x7E` anywhere other than the start of a
+line is ordinary text, so it cannot drag the parser into binary mode
+mid-sentence.
+
+```
+host  -> board   7E <cmd>        <len> <payload...> <crc8>
+board -> host    7E <cmd | 0x80> <len> <payload...> <crc8>
+```
+
+`crc8` is the classic polynomial `0x07` over the command, the length and the
+payload. A frame that fails the check is dropped rather than guessed at: a wrong
+DMX value is worse than a missing one, and any sender worth the name resends on
+its next tick.
+
+| Cmd | Payload | Does |
+|---|---|---|
+| `0x01` | `addr_hi addr_lo value` | Writes one DMX slot |
+| `0x02` | `addr_hi addr_lo count values...` | Writes a run of slots |
+| `0x03` | `addr_hi addr_lo count` | Reads a run back, answered on `0x83` |
+| `0x10` | none | Ping, answered on `0x90` |
+
+Addresses are 1 to 512 and anything outside is ignored. The length byte caps one
+frame at 255 payload bytes, so a full universe takes three block writes.
+
+> On the ESP32-S2 the port is native USB CDC, where the baud rate is a fiction
+> both ends ignore. Throughput is the USB link's, so the gain comes from the
+> compact frames rather than from any baud setting. On the ESP8266 it is a real
+> UART and the baud rate does matter.
+
+`Get-Config` is the companion on the text side: one line of JSON with every
+fixture and its live values, the label table and the category vocabulary, so
+tooling never has to scrape the human-readable status lines.
 
 ## Channel types
 

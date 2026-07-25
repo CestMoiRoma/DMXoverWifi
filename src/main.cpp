@@ -22,7 +22,7 @@ static WifiManager wifiManager;
 static MqttManager mqttManager(deviceManager);
 static WsServer wsServer(deviceManager, modules);
 static DmxWebServer webServer(deviceManager, labelStore, modules, wifiManager, mqttManager);
-static SerialConsole serialConsole(deviceManager, wifiManager, mqttManager);
+static SerialConsole serialConsole(deviceManager, labelStore, wifiManager, mqttManager);
 
 void setup() {
   Serial.begin(115200);

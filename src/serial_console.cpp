@@ -25,6 +25,8 @@ static const char* HELP_LINES[] = {
     "Set-device add-channel device=<name> name=<ch> channel=<offset> mode=<slider|button|momentary|switch>",
     "Set-device del-channel name=<ch> [device=<name>]   - remove a channel",
     "Set-device del device=<name>                       - remove a device",
+    "Get-Config                                         - fixtures, labels and categories"
+    " as one line of JSON, for tooling",
     "get-status [all|wifi|mqtt|devices|mesh]",
     "get-status device name=<name>                      - channels of one device",
     "get-status channel channel=<ch> [device=<name>]    - one channel's value",
@@ -121,7 +123,20 @@ void SerialConsole::begin() {}
 
 void SerialConsole::poll() {
   while (Serial.available() > 0) {
-    char c = (char)Serial.read();
+    uint8_t b = (uint8_t)Serial.read();
+
+    if (_binState != BIN_IDLE) {
+      feedBinary(b);
+      continue;
+    }
+    // Only at the start of a line, so a stray 0x7E inside a text command cannot
+    // drag the parser into binary mode mid-sentence.
+    if (b == FRAME_START && _buffer.length() == 0) {
+      _binState = BIN_CMD;
+      continue;
+    }
+
+    char c = (char)b;
     if (c == '\n') {
       String line = _buffer;
       line.trim();
@@ -131,6 +146,107 @@ void SerialConsole::poll() {
       _buffer += c;
     }
   }
+}
+
+// ---- binary control channel ----
+
+static uint8_t crc8(const uint8_t* data, size_t length) {
+  uint8_t crc = 0;
+  for (size_t i = 0; i < length; i++) {
+    crc ^= data[i];
+    for (int bit = 0; bit < 8; bit++) {
+      crc = (crc & 0x80) ? (uint8_t)((crc << 1) ^ 0x07) : (uint8_t)(crc << 1);
+    }
+  }
+  return crc;
+}
+
+void SerialConsole::feedBinary(uint8_t byte) {
+  switch (_binState) {
+    case BIN_CMD:
+      _binCmd = byte;
+      _binState = BIN_LEN;
+      break;
+    case BIN_LEN:
+      _binLen = byte;
+      _binIndex = 0;
+      _binState = _binLen ? BIN_PAYLOAD : BIN_CRC;
+      break;
+    case BIN_PAYLOAD:
+      _binPayload[_binIndex++] = byte;
+      if (_binIndex >= _binLen) _binState = BIN_CRC;
+      break;
+    case BIN_CRC: {
+      uint8_t header[2] = {_binCmd, _binLen};
+      uint8_t want = crc8(header, 2);
+      // Continue the running CRC across the payload.
+      for (size_t i = 0; i < _binLen; i++) {
+        want ^= _binPayload[i];
+        for (int bit = 0; bit < 8; bit++) {
+          want = (want & 0x80) ? (uint8_t)((want << 1) ^ 0x07) : (uint8_t)(want << 1);
+        }
+      }
+      // A corrupt frame is dropped rather than guessed at: a wrong DMX value is
+      // worse than a missing one, and the host resends on the next tick anyway.
+      if (want == byte) dispatchFrame();
+      _binState = BIN_IDLE;
+      break;
+    }
+    default:
+      _binState = BIN_IDLE;
+      break;
+  }
+}
+
+void SerialConsole::dispatchFrame() {
+  switch (_binCmd) {
+    case CMD_SET_ADDR: {
+      if (_binLen < 3) return;
+      uint16_t address = ((uint16_t)_binPayload[0] << 8) | _binPayload[1];
+      _devices.dmx().setChannel(address, _binPayload[2]);
+      break;
+    }
+    case CMD_SET_BLOCK: {
+      if (_binLen < 3) return;
+      uint16_t address = ((uint16_t)_binPayload[0] << 8) | _binPayload[1];
+      uint8_t count = _binPayload[2];
+      if ((size_t)count + 3 > _binLen) count = (uint8_t)(_binLen - 3);
+      for (uint8_t i = 0; i < count; i++) {
+        _devices.dmx().setChannel(address + i, _binPayload[3 + i]);
+      }
+      break;
+    }
+    case CMD_GET_BLOCK: {
+      if (_binLen < 3) return;
+      uint16_t address = ((uint16_t)_binPayload[0] << 8) | _binPayload[1];
+      uint8_t count = _binPayload[2];
+      if (count > MAX_PAYLOAD) count = MAX_PAYLOAD;
+      uint8_t out[MAX_PAYLOAD];
+      for (uint8_t i = 0; i < count; i++) out[i] = _devices.dmx().getChannel(address + i);
+      sendFrame(CMD_GET_BLOCK, out, count);
+      break;
+    }
+    case CMD_PING:
+      sendFrame(CMD_PING, nullptr, 0);
+      break;
+    default:
+      break;
+  }
+}
+
+void SerialConsole::sendFrame(uint8_t cmd, const uint8_t* payload, size_t length) {
+  uint8_t header[3] = {FRAME_START, (uint8_t)(cmd | REPLY_FLAG), (uint8_t)length};
+  Serial.write(header, 3);
+  if (length && payload) Serial.write(payload, length);
+
+  uint8_t crc = crc8(header + 1, 2);
+  for (size_t i = 0; i < length; i++) {
+    crc ^= payload[i];
+    for (int bit = 0; bit < 8; bit++) {
+      crc = (crc & 0x80) ? (uint8_t)((crc << 1) ^ 0x07) : (uint8_t)(crc << 1);
+    }
+  }
+  Serial.write(crc);
 }
 
 void SerialConsole::write(const String& text) {
@@ -502,6 +618,19 @@ void SerialConsole::cmdSetValue(const String& rest) {
   if (!any) fail("no channel named '" + name + "'");
 }
 
+// One line of compact JSON: fixtures with their live values, the label table and
+// the category vocabulary. The desktop app reads this instead of scraping the
+// human-readable status lines, which were never meant to be parsed.
+void SerialConsole::cmdGetConfig() {
+  JsonDocument doc;
+  _devices.devicesToJson(doc["devices"].to<JsonArray>(), true);
+  _labels.labelsToJson(doc["labels"].to<JsonArray>());
+  categoriesToJson(doc["categories"].to<JsonArray>());
+  String out;
+  serializeJson(doc, out);
+  emit("config " + out);
+}
+
 void SerialConsole::cmdHelp() {
   for (const char* line : HELP_LINES) emit(line);
 }
@@ -545,6 +674,8 @@ void SerialConsole::handleLine(const String& line) {
     cmdSetDevice(rest);
   } else if (cmd == "set-value") {
     cmdSetValue(rest);
+  } else if (cmd == "get-config") {
+    cmdGetConfig();
   } else if (cmd == "get-status") {
     cmdGetStatus(rest);
   } else if (cmd == "help") {

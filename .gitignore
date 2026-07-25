@@ -21,3 +21,6 @@ fsdata/data/
 Thumbs.db
 $RECYCLE.BIN/
 System Volume Information/
+
+# Python bytecode from the desktop tool
+tools/__pycache__/
