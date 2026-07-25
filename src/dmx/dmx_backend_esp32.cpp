@@ -1,44 +1,36 @@
 // DMX transmit backend for ESP32 / ESP32-S2.
 //
-// Mirrors the method validated on the Wemos S2 Mini under CircuitPython: drive
-// the break by hand on the TX pin rather than by switching the UART baudrate.
-// Baudrate-switching was unreliable on the S2 because UART writes return before
-// the FIFO drains, so the break byte shifted out at the wrong rate and fell
-// under the 88us DMX minimum.
+// Thin adapter over the esp_dmx library (someweisguy/esp_dmx, v4), pulled in as
+// a lib_deps dependency on the s2mini* environments only. esp_dmx drives the
+// break and mark-after-break in the hardware UART driver, so the timing does not
+// depend on how fast a software call returns. ESPDMX is ESP8266-only and is not
+// used here.
 
 #if !defined(ESP8266)
 
+#include <esp_dmx.h>
+
 #include "dmx_backend.h"
 
-static const uint32_t DMX_BAUD = 250000;   // 8N2
-static const uint32_t BREAK_US = 250;      // spec minimum 88us, kept generous
-static const uint32_t MAB_US = 30;         // mark after break, spec minimum 8us
-
-static int s_txPin = -1;
+static const dmx_port_t DMX_PORT = DMX_NUM_1;
 
 namespace dmxbackend {
 
 void begin(int txPin) {
-  s_txPin = txPin;
-  // Serial1 is free on the S2 (USB CDC is the console). rx unused.
-  Serial1.begin(DMX_BAUD, SERIAL_8N2, -1, s_txPin);
+  dmx_config_t config = DMX_CONFIG_DEFAULT;
+  dmx_personality_t personalities[] = {{512, "DMX over WiFi"}};
+  dmx_driver_install(DMX_PORT, &config, personalities, 1);
+  // tx only: no rx, and no RTS/direction pin (DmxDriver holds DE/RE high itself,
+  // or it is tied to VCC in hardware).
+  dmx_set_pin(DMX_PORT, txPin, -1, -1);
 }
 
 void sendFrame(const uint8_t* frame, uint16_t len) {
-  if (s_txPin < 0) return;
-
-  Serial1.flush();
-  Serial1.end();
-
-  pinMode(s_txPin, OUTPUT);
-  digitalWrite(s_txPin, LOW);   // break: hold TX low
-  delayMicroseconds(BREAK_US);
-  digitalWrite(s_txPin, HIGH);  // mark after break: idle high
-  delayMicroseconds(MAB_US);
-
-  Serial1.begin(DMX_BAUD, SERIAL_8N2, -1, s_txPin);
-  Serial1.write(frame, len);
-  Serial1.flush();
+  // frame[0] is the DMX start code, frame[1..512] the slots: exactly the layout
+  // esp_dmx expects.
+  dmx_write(DMX_PORT, frame, len);
+  dmx_send(DMX_PORT);
+  dmx_wait_sent(DMX_PORT, DMX_TIMEOUT_TICK);
 }
 
 }  // namespace dmxbackend

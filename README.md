@@ -60,6 +60,9 @@ every DMX channel to Home Assistant over MQTT.
 Output only for now. `RO` stays unconnected, so there is no DMX input and no RDM.
 Changing that is the first item on the [roadmap](#roadmap).
 
+The two chip families are not equal in what they can do. **[HARDWARE.md](HARDWARE.md)**
+is the full capability comparison, board by board.
+
 > [!NOTE]
 > **ESP32 vs ESP8266.** On the ESP32 the DMX data pin is a configurable GPIO
 > (`IO4` by default). On the ESP8266 the DMX output is fixed to `Serial1`
@@ -112,8 +115,8 @@ Either way, reboot the board for a pin change to take effect.
 
 The firmware builds with [PlatformIO](https://platformio.org/). Install the CLI
 (`pip install platformio`) or the VS Code extension. PlatformIO downloads the
-board toolchains and the libraries (`ArduinoJson`, `PubSubClient`) on the first
-build; nothing else needs installing by hand.
+board toolchains and the libraries (`ArduinoJson`, `PubSubClient`, and the
+per-board DMX library) on the first build; nothing else needs installing by hand.
 
 ### 2. Get the code
 
@@ -279,8 +282,8 @@ src/
   dmx/
     dmx_driver.{h,cpp}  512-channel buffer, 40 fps refresh, board-agnostic
     dmx_backend.h       Transmit backend interface
-    dmx_backend_esp32.cpp    ESP32 break-by-GPIO transmit path
-    dmx_backend_esp8266.cpp  ESP8266 transmit path (ESPDMX-derived, Serial1)
+    dmx_backend_esp32.cpp    ESP32 transmit path (adapter over esp_dmx)
+    dmx_backend_esp8266.cpp  ESP8266 transmit path (adapter over ESPDMX, Serial1)
   devices.{h,cpp}       Fixture and channel model, persistence, DMX addressing
   web_server.{h,cpp}    HTTP routes: the static UI plus the JSON API
   wifi_manager.{h,cpp}  Saved-network database, priority connect, AP fallback
@@ -300,6 +303,10 @@ the firmware at runtime and is not part of the flashed image, so a firmware
 re-upload leaves your WiFi, MQTT and fixtures alone.
 
 ## Documentation
+
+**[HARDWARE.md](HARDWARE.md)** is the board and chip capability comparison: what
+the ESP32 family and the ESP8266 can each do in this firmware, today and on the
+roadmap.
 
 **[WIKI.md](WIKI.md)** is the full reference:
 
@@ -409,5 +416,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 Successor to [ESPDMX](https://github.com/CestMoiRoma/ESPDMX) by
 [CestMoiRoma](https://github.com/CestMoiRoma). The wiring diagram comes from that
-project. The ESP8266 DMX transmit path is derived from the
-[ESPDMX library](https://github.com/Rickgg/ESP-Dmx) by Rick.
+project. DMX output is driven by the
+[esp_dmx](https://github.com/someweisguy/esp_dmx) library by Mitch Weisbrod on
+the ESP32, and the [ESPDMX](https://github.com/Rickgg/ESP-Dmx) library by Rick on
+the ESP8266.
