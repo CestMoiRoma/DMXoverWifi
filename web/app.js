@@ -458,7 +458,26 @@ function deviceCard(device) {
     card.appendChild(bar);
   }
 
-  device.channels.forEach((channel) => card.appendChild(channelControl(device, channel)));
+  const isEz = device.card === "ez" && device.ez && device.ez.kind;
+  const peeking = litePeek.has(device.id);
+
+  if (isEz && !peeking) {
+    ezCardBody(device).forEach((part) => card.appendChild(part));
+  } else {
+    device.channels.forEach((channel) => card.appendChild(channelControl(device, channel)));
+  }
+
+  if (isEz) {
+    const toggle = el("button", { type: "button", class: "secondary small lite-toggle" }, [
+      peeking ? "Back to the widget" : "Show raw channels",
+    ]);
+    toggle.addEventListener("click", () => {
+      if (peeking) litePeek.delete(device.id);
+      else litePeek.add(device.id);
+      redrawDevices();
+    });
+    card.appendChild(toggle);
+  }
   return card;
 }
 
@@ -647,6 +666,507 @@ function ezSetting(device, key, fallback) {
   const settings = (device.ez && device.ez.settings) || {};
   const value = settings[key];
   return value === undefined || value === "" ? fallback : value;
+}
+
+// ---- EZ widgets ----
+
+const PERCENTS = [0, 25, 50, 75, 100];
+const clamp255 = (v) => Math.max(0, Math.min(255, Math.round(v)));
+
+// Fixtures the user has flipped to the raw channel view for now. Deliberately
+// not persisted: it is a "show me what is really going on" toggle for one
+// awkward evening, not a property of the fixture.
+let litePeek = new Set();
+
+function ezChannelValue(device, role) {
+  const offset = ezRoleOffset(device, role);
+  if (offset === null) return 0;
+  const channel = (device.channels || []).find((c) => c.offset === offset);
+  return channel && typeof channel.value === "number" ? channel.value : 0;
+}
+
+function ezSend(device, role, value, immediate) {
+  const offset = ezRoleOffset(device, role);
+  if (offset === null) return;
+  sendValue(device.id, offset, clamp255(value), immediate);
+}
+
+// Lets a remote change repaint this widget, the same way lite controls already
+// do, so two browsers watching one rig agree.
+function ezRegister(device, role, apply) {
+  const offset = ezRoleOffset(device, role);
+  if (offset === null) return;
+  channelControls.set(device.id + ":" + offset, { apply: apply });
+}
+
+function percentRow(onPick) {
+  const row = el("div", { class: "pct-row" });
+  PERCENTS.forEach((pct) => {
+    const btn = el("button", { type: "button", class: "secondary small" }, [pct + "%"]);
+    btn.addEventListener("click", () => onPick(Math.round((pct * 255) / 100)));
+    row.appendChild(btn);
+  });
+  return row;
+}
+
+// A labelled fader plus its percentage row, bound to one role.
+function roleFader(device, role, label) {
+  if (ezRoleOffset(device, role) === null) return null;
+  const block = el("div", { class: "ez-block" });
+  const current = ezChannelValue(device, role);
+
+  const head = el("div", { class: "ez-row" });
+  head.appendChild(el("label", {}, [label]));
+  const input = el("input", { type: "range", min: "0", max: "255", value: String(current) });
+  const out = el("span", { class: "ez-readout" }, [String(current)]);
+  head.appendChild(input);
+  head.appendChild(out);
+
+  const paint = (value) => {
+    input.value = String(value);
+    out.textContent = String(value);
+  };
+  const state = { dragging: false, apply: paint };
+  input.addEventListener("input", () => {
+    state.dragging = true;
+    out.textContent = input.value;
+    ezSend(device, role, parseInt(input.value, 10), false);
+  });
+  input.addEventListener("change", () => {
+    state.dragging = false;
+    ezSend(device, role, parseInt(input.value, 10), true);
+  });
+  const offset = ezRoleOffset(device, role);
+  channelControls.set(device.id + ":" + offset, state);
+
+  block.appendChild(head);
+  block.appendChild(
+    percentRow((value) => {
+      paint(value);
+      ezSend(device, role, value, true);
+    })
+  );
+  return block;
+}
+
+// -- colour --
+
+function hsvToRgb(h, s, v) {
+  const i = Math.floor(h * 6);
+  const f = h * 6 - i;
+  const p = v * (1 - s);
+  const q = v * (1 - f * s);
+  const t = v * (1 - (1 - f) * s);
+  const table = [
+    [v, t, p],
+    [q, v, p],
+    [p, v, t],
+    [p, q, v],
+    [t, p, v],
+    [v, p, q],
+  ][i % 6];
+  return table.map((c) => clamp255(c * 255));
+}
+
+function rgbToHsv(r, g, b) {
+  r /= 255;
+  g /= 255;
+  b /= 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const d = max - min;
+  let h = 0;
+  if (d !== 0) {
+    if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+    else if (max === g) h = ((b - r) / d + 2) / 6;
+    else h = ((r - g) / d + 4) / 6;
+  }
+  return [h, max === 0 ? 0 : d / max, max];
+}
+
+function drawColourWheel(canvas) {
+  const ctx = canvas.getContext("2d");
+  const size = canvas.width;
+  const r = size / 2;
+  ctx.clearRect(0, 0, size, size);
+  // One-degree wedges, then a white radial wash for the saturation axis. Cheap
+  // and exact enough at this size, and it needs no image data juggling.
+  for (let a = 0; a < 360; a++) {
+    ctx.beginPath();
+    ctx.moveTo(r, r);
+    ctx.arc(r, r, r, ((a - 1) * Math.PI) / 180, ((a + 1) * Math.PI) / 180);
+    ctx.closePath();
+    ctx.fillStyle = "hsl(" + a + ", 100%, 50%)";
+    ctx.fill();
+  }
+  const wash = ctx.createRadialGradient(r, r, 0, r, r, r);
+  wash.addColorStop(0, "rgba(255,255,255,1)");
+  wash.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = wash;
+  ctx.beginPath();
+  ctx.arc(r, r, r, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function colourWheel(device, hasWhite) {
+  const block = el("div", { class: "ez-block wheel-block" });
+  const size = 168;
+  const canvas = el("canvas", { width: String(size), height: String(size), class: "wheel" });
+  const marker = el("div", { class: "wheel-marker" });
+  const holder = el("div", { class: "wheel-holder" }, [canvas, marker]);
+  drawColourWheel(canvas);
+
+  const placeMarker = (r, g, b, w) => {
+    // A white channel carries what the three colours have in common, so add it
+    // back before working out where on the wheel this colour sits.
+    const hsv = rgbToHsv(Math.min(255, r + w), Math.min(255, g + w), Math.min(255, b + w));
+    const angle = hsv[0] * Math.PI * 2;
+    const radius = (hsv[1] * size) / 2;
+    marker.style.left = size / 2 + Math.cos(angle) * radius + "px";
+    marker.style.top = size / 2 + Math.sin(angle) * radius + "px";
+  };
+
+  const readBack = () => {
+    placeMarker(
+      ezChannelValue(device, "red"),
+      ezChannelValue(device, "green"),
+      ezChannelValue(device, "blue"),
+      hasWhite ? ezChannelValue(device, "white") : 0
+    );
+  };
+  readBack();
+
+  const apply = (rgb) => {
+    let [r, g, b] = rgb;
+    let w = 0;
+    if (hasWhite) {
+      // Whatever all three share is the white channel's job: it is a cleaner and
+      // usually brighter white than mixing one out of the colour emitters.
+      w = Math.min(r, g, b);
+      r -= w;
+      g -= w;
+      b -= w;
+    }
+    ezSend(device, "red", r, false);
+    ezSend(device, "green", g, false);
+    ezSend(device, "blue", b, false);
+    if (hasWhite) ezSend(device, "white", w, false);
+    placeMarker(r, g, b, w);
+  };
+
+  const pick = (event) => {
+    const rect = canvas.getBoundingClientRect();
+    const x = event.clientX - rect.left - size / 2;
+    const y = event.clientY - rect.top - size / 2;
+    const radius = Math.min(1, Math.sqrt(x * x + y * y) / (size / 2));
+    let angle = Math.atan2(y, x) / (Math.PI * 2);
+    if (angle < 0) angle += 1;
+    apply(hsvToRgb(angle, radius, 1));
+  };
+
+  let picking = false;
+  canvas.addEventListener("pointerdown", (e) => {
+    picking = true;
+    canvas.setPointerCapture(e.pointerId);
+    pick(e);
+  });
+  canvas.addEventListener("pointermove", (e) => {
+    if (picking) pick(e);
+  });
+  canvas.addEventListener("pointerup", () => {
+    picking = false;
+  });
+
+  ["red", "green", "blue"].concat(hasWhite ? ["white"] : []).forEach((role) => {
+    ezRegister(device, role, () => readBack());
+  });
+
+  block.appendChild(holder);
+  return block;
+}
+
+// -- warm and cold white --
+
+function whitesSlider(device) {
+  const block = el("div", { class: "ez-block whites-block" });
+  const warm = ezChannelValue(device, "warm");
+  const cold = ezChannelValue(device, "cold");
+  // Position is a crossfade: the top is all warm, the bottom all cold.
+  const start = warm + cold === 0 ? 128 : Math.round((cold * 255) / (warm + cold));
+
+  const input = el("input", {
+    type: "range",
+    min: "0",
+    max: "255",
+    value: String(start),
+    class: "whites",
+    orient: "vertical",
+  });
+  const readout = el("span", { class: "ez-readout" }, ["mix"]);
+
+  const apply = (pos) => {
+    ezSend(device, "warm", 255 - pos, false);
+    ezSend(device, "cold", pos, false);
+    readout.textContent = pos < 96 ? "warm" : pos > 160 ? "cold" : "mix";
+  };
+  input.addEventListener("input", () => apply(parseInt(input.value, 10)));
+
+  block.appendChild(el("label", {}, ["Warm to cold"]));
+  block.appendChild(input);
+  block.appendChild(readout);
+  return block;
+}
+
+// -- smoke --
+
+function smokeControls(device) {
+  const block = el("div", { class: "ez-block" });
+  const sliderMode = ezSetting(device, "mode", "onoff") === "slider";
+  const autoOff = parseInt(ezSetting(device, "auto_off_s", "0"), 10) || 0;
+  const offset = ezRoleOffset(device, "output");
+
+  const burst = (seconds) => {
+    api("/api/devices/" + device.id + "/burst", "POST", {
+      offset: offset,
+      value: 255,
+      ms: Math.round(seconds * 1000),
+    });
+  };
+
+  if (sliderMode) {
+    const fader = roleFader(device, "output", "Pump");
+    if (fader) block.appendChild(fader);
+  } else {
+    const row = el("div", { class: "ez-row" });
+    let on = ezChannelValue(device, "output") > 0;
+    const button = el("button", { class: "channel-btn" + (on ? " on" : "") }, [on ? "On" : "Off"]);
+    const paint = (value) => {
+      on = value > 0;
+      button.textContent = on ? "On" : "Off";
+      button.classList.toggle("on", on);
+    };
+    button.addEventListener("click", () => {
+      const next = on ? 0 : 255;
+      paint(next);
+      // With an auto-off set, "on" goes through the board's burst timer, so a
+      // browser that disappears cannot leave the machine running.
+      if (next && autoOff > 0) burst(autoOff);
+      else ezSend(device, "output", next, true);
+    });
+    ezRegister(device, "output", paint);
+    row.appendChild(el("label", {}, ["Output"]));
+    row.appendChild(button);
+    block.appendChild(row);
+  }
+
+  const bursts = el("div", { class: "pct-row" });
+  [1, 3, 5].forEach((s) => {
+    const btn = el("button", { type: "button", class: "secondary small" }, ["Burst " + s + "s"]);
+    btn.addEventListener("click", () => burst(s));
+    bursts.appendChild(btn);
+  });
+  const custom = el("input", { type: "number", min: "1", max: "30", value: "10", class: "burst-n" });
+  const go = el("button", { type: "button", class: "secondary small" }, ["Burst"]);
+  go.addEventListener("click", () => burst(parseInt(custom.value, 10) || 1));
+  bursts.appendChild(custom);
+  bursts.appendChild(go);
+  block.appendChild(bursts);
+
+  block.appendChild(
+    el("p", { class: "hint" }, [
+      autoOff > 0
+        ? "Auto-off after " + autoOff + " s. The board holds the timer, capped at 30 s."
+        : "Bursts are timed by the board and capped at 30 s.",
+    ])
+  );
+  return block;
+}
+
+// -- motion --
+
+function motionPad(device) {
+  const block = el("div", { class: "ez-block" });
+  const invertH = ezSetting(device, "invert_h", "") === "1";
+  const invertV = ezSetting(device, "invert_v", "") === "1";
+  const maxStep = Math.max(1, parseInt(ezSetting(device, "max_step", "10"), 10) || 10);
+  const fineOnly = ezSetting(device, "fine_mode", "both") === "fine";
+  const hasFineH = ezRoleOffset(device, "horizontal_fine") !== null;
+  const hasFineV = ezRoleOffset(device, "vertical_fine") !== null;
+
+  const pad = el("div", { class: "joystick", tabindex: "0" });
+  const knob = el("div", { class: "joystick-knob" });
+  pad.appendChild(knob);
+
+  let vector = { x: 0, y: 0 };
+  let timer = null;
+
+  // Deflection sets the rate, not the position: a small push always steps by
+  // one, full travel reaches max_step. That is what makes a slow follow
+  // possible on the same control that repositions a head quickly.
+  const stepFor = (axis) => {
+    if (axis === 0) return 0;
+    const magnitude = Math.min(1, Math.abs(axis));
+    const size = Math.max(1, Math.round(magnitude * maxStep));
+    return axis > 0 ? size : -size;
+  };
+
+  const nudgeAxis = (coarseRole, fineRole, hasFine, delta) => {
+    if (delta === 0) return;
+    if (fineOnly && hasFine) {
+      ezSend(device, fineRole, ezChannelValue(device, fineRole) + delta, false);
+      return;
+    }
+    if (hasFine) {
+      // Coarse and fine as one 16-bit value, so a step of one really is the
+      // smallest movement the fixture can make rather than 1/256th of travel.
+      const wide = ezChannelValue(device, coarseRole) * 256 + ezChannelValue(device, fineRole);
+      const next = Math.max(0, Math.min(65535, wide + delta));
+      ezSend(device, coarseRole, Math.floor(next / 256), false);
+      ezSend(device, fineRole, next % 256, false);
+      return;
+    }
+    ezSend(device, coarseRole, ezChannelValue(device, coarseRole) + delta, false);
+  };
+
+  const tick = () => {
+    const dx = stepFor(invertH ? -vector.x : vector.x);
+    const dy = stepFor(invertV ? -vector.y : vector.y);
+    nudgeAxis("horizontal", "horizontal_fine", hasFineH, dx);
+    nudgeAxis("vertical", "vertical_fine", hasFineV, dy);
+  };
+
+  const startTicking = () => {
+    if (!timer) timer = setInterval(tick, 60);
+  };
+  const stopTicking = () => {
+    if (timer) clearInterval(timer);
+    timer = null;
+    vector = { x: 0, y: 0 };
+    knob.style.transform = "translate(-50%, -50%)";
+  };
+
+  const track = (event) => {
+    const rect = pad.getBoundingClientRect();
+    const x = (event.clientX - rect.left) / rect.width - 0.5;
+    const y = (event.clientY - rect.top) / rect.height - 0.5;
+    vector = { x: Math.max(-1, Math.min(1, x * 2)), y: Math.max(-1, Math.min(1, y * 2)) };
+    knob.style.transform =
+      "translate(calc(-50% + " + vector.x * 40 + "%), calc(-50% + " + vector.y * 40 + "%))";
+  };
+
+  pad.addEventListener("pointerdown", (e) => {
+    pad.setPointerCapture(e.pointerId);
+    track(e);
+    startTicking();
+  });
+  pad.addEventListener("pointermove", (e) => {
+    if (timer) track(e);
+  });
+  pad.addEventListener("pointerup", stopTicking);
+  pad.addEventListener("pointercancel", stopTicking);
+  pad.addEventListener("pointerleave", () => {
+    if (timer) stopTicking();
+  });
+
+  // Double-click centres, which is how you find a head that has wandered.
+  pad.addEventListener("dblclick", () => {
+    stopTicking();
+    ["horizontal", "vertical"].forEach((role) => ezSend(device, role, 128, true));
+    ["horizontal_fine", "vertical_fine"].forEach((role) => ezSend(device, role, 128, true));
+  });
+
+  const KEYS = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+  pad.addEventListener("keydown", (e) => {
+    const key = KEYS[e.key];
+    if (!key) return;
+    e.preventDefault();
+    // One press, one smallest step. Holding a key repeats through the browser.
+    nudgeAxis("horizontal", "horizontal_fine", hasFineH, (invertH ? -1 : 1) * key[0]);
+    nudgeAxis("vertical", "vertical_fine", hasFineV, (invertV ? -1 : 1) * key[1]);
+  });
+
+  block.appendChild(pad);
+  block.appendChild(
+    el("p", { class: "hint" }, [
+      "Drag to move, further is faster. Double-click to centre. Arrow keys step once." +
+        (fineOnly ? " Fine tune only." : ""),
+    ])
+  );
+  return block;
+}
+
+// -- presets --
+
+function presetRow(device) {
+  const presets = (device.ez && device.ez.presets) || [];
+  const row = el("div", { class: "pct-row" });
+
+  const roles = Object.keys((device.ez && device.ez.roles) || {});
+
+  presets.forEach((preset, index) => {
+    const btn = el("button", { type: "button", class: "secondary small" }, [preset.name]);
+    btn.addEventListener("click", () => {
+      Object.keys(preset.values || {}).forEach((role) => {
+        ezSend(device, role, preset.values[role], true);
+      });
+      redrawDevices();
+    });
+    btn.addEventListener("contextmenu", async (e) => {
+      e.preventDefault();
+      if (!confirm('Delete the preset "' + preset.name + '"?')) return;
+      const next = presets.slice();
+      next.splice(index, 1);
+      await savePresets(device, next);
+    });
+    row.appendChild(btn);
+  });
+
+  const save = el("button", { type: "button", class: "secondary small" }, ["Save look"]);
+  save.addEventListener("click", async () => {
+    const name = prompt("Name for this look", "Preset " + (presets.length + 1));
+    if (!name) return;
+    const values = {};
+    roles.forEach((role) => {
+      values[role] = ezChannelValue(device, role);
+    });
+    await savePresets(device, presets.concat([{ name: name, values: values }]));
+  });
+  row.appendChild(save);
+
+  if (presets.length) {
+    row.appendChild(el("span", { class: "hint" }, ["Right-click a look to delete it."]));
+  }
+  return row;
+}
+
+async function savePresets(device, presets) {
+  const ez = JSON.parse(JSON.stringify(device.ez || {}));
+  ez.presets = presets.slice(0, 12);
+  await api("/api/devices/" + device.id, "PUT", { ez: ez });
+  renderDevices();
+}
+
+// -- assembling a card --
+
+function ezCardBody(device) {
+  const kind = (device.ez && device.ez.kind) || "";
+  const parts = [];
+
+  if (kind === "dimmer") parts.push(roleFader(device, "level", "Level"));
+  else if (kind === "strobe") parts.push(roleFader(device, "strobe", "Strobe"));
+  else if (kind === "mono") parts.push(roleFader(device, "level", "Light"));
+  else if (kind === "rgb" || kind === "rgbw") parts.push(colourWheel(device, kind === "rgbw"));
+  else if (kind === "cwww") parts.push(whitesSlider(device));
+  else if (kind === "smoke") parts.push(smokeControls(device));
+  else if (kind === "motion") parts.push(motionPad(device));
+
+  // Shared optional roles, drawn only where the fixture claimed them.
+  if (kind !== "dimmer") parts.push(roleFader(device, "dimmer", "Master dimmer"));
+  if (kind !== "strobe") parts.push(roleFader(device, "strobe", "Strobe"));
+  if (kind === "motion") parts.push(roleFader(device, "speed", "Movement speed"));
+
+  if (kind !== "smoke") parts.push(presetRow(device));
+  return parts.filter(Boolean);
 }
 
 // ---- device modal: create, edit and duplicate ----

@@ -9,7 +9,7 @@ console scrollback is not a place to keep a plan.
 |---|---|---|
 | 1 | New-device pre-popup: Lite, EZ Control, Restore from JSON | done |
 | 2 | Up arrow on each card, saving the fixture as JSON | done |
-| 3 | EZ Control widgets | **next**: the roles and presets are stored and round-trip, the cards still draw lite |
+| 3 | EZ Control widgets | done, never yet driven against a real fixture |
 | 4 | Sort and search column on the left | done |
 | 5 | Network page: rename, W5500 Ethernet, Beta tags | done, Ethernet never run against hardware |
 | — | Config: hide the DE/RE pin field when disabled | done in `803707b` |

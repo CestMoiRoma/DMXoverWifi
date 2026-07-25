@@ -531,3 +531,63 @@ form { margin: 0; }
   color: #dc2626;
   font-size: 0.9rem;
 }
+
+/* -- EZ widgets -- */
+
+.ez-block { margin: 0.6rem 0; }
+.ez-row { display: grid; grid-template-columns: minmax(6rem, 1fr) 2fr auto; align-items: center; gap: 0.75rem; }
+.ez-row label { color: var(--muted); font-size: 0.9rem; }
+.ez-readout { min-width: 2.5rem; text-align: right; font-variant-numeric: tabular-nums; }
+
+.pct-row { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.4rem; align-items: center; }
+.burst-n { width: 4rem; }
+
+.wheel-block { display: flex; justify-content: center; }
+.wheel-holder { position: relative; width: 168px; height: 168px; }
+.wheel { border-radius: 50%; cursor: crosshair; touch-action: none; display: block; }
+.wheel-marker {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+}
+
+.whites-block { display: flex; align-items: center; gap: 0.75rem; }
+/* A vertical run, warm at the top, so the control matches what it does. */
+.whites {
+  writing-mode: vertical-lr;
+  direction: rtl;
+  width: 2rem;
+  height: 9rem;
+}
+
+.joystick {
+  position: relative;
+  width: 168px;
+  height: 168px;
+  margin: 0 auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+  touch-action: none;
+  cursor: grab;
+}
+.joystick:focus-visible { outline: 2px solid var(--accent); }
+.joystick-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 2.5rem;
+  height: 2.5rem;
+  margin: 0;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: var(--accent);
+  pointer-events: none;
+}
+
+.lite-toggle { margin-top: 0.75rem; }
