@@ -26,11 +26,20 @@ void begin(int txPin) {
 }
 
 void sendFrame(const uint8_t* frame, uint16_t len) {
+  // Wait for the *previous* frame here rather than for this one at the end.
+  //
+  // A 513-slot frame takes about 23 ms on the wire, and the driver refreshes
+  // every 25 ms. Waiting after dmx_send meant the main loop sat in this call for
+  // 23 ms out of every 25, so the board spent over ninety percent of its life
+  // doing nothing while HTTP connections queued up behind it and were reset.
+  // Waiting first costs nothing instead: by the time the next refresh comes
+  // round the UART has long finished, and the loop gets those 23 ms back.
+  dmx_wait_sent(DMX_PORT, DMX_TIMEOUT_TICK);
+
   // frame[0] is the DMX start code, frame[1..512] the slots: exactly the layout
   // esp_dmx expects.
   dmx_write(DMX_PORT, frame, len);
   dmx_send(DMX_PORT);
-  dmx_wait_sent(DMX_PORT, DMX_TIMEOUT_TICK);
 }
 
 }  // namespace dmxbackend

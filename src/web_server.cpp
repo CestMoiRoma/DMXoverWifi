@@ -9,6 +9,10 @@
 
 static const char* REPO_URL = "https://github.com/CestMoiRoma/DMXoverWifi";
 
+// Published by the main loop; see the timing block in main.cpp.
+extern uint32_t loopRatePerSecond;
+extern uint32_t loopMaxUs;
+
 // ---- helpers ----
 
 void DmxWebServer::parseBody(JsonDocument& doc) {
@@ -43,6 +47,17 @@ bool DmxWebServer::serveFile(const char* path, const char* contentType) {
   _server.streamFile(f, contentType);
   f.close();
   return true;
+}
+
+// The page ships pre-compressed, so the board never spends cycles deflating and
+// the transfer is roughly a quarter of the bytes. That last part matters more
+// than it sounds: the response is written synchronously, so the main loop is
+// stalled for the whole transfer and anything arriving meanwhile queues behind
+// it. Every browser has handled gzip for twenty years, so there is no
+// uncompressed copy to fall back to.
+void DmxWebServer::serveIndex() {
+  _server.sendHeader("Content-Encoding", "gzip");
+  serveFile("/www/index.html.gz", "text/html");
 }
 
 // ---- access control ----
@@ -96,7 +111,7 @@ void DmxWebServer::begin() {
   const char* wanted[] = {"Origin", "Referer", "X-API-Key"};
   _server.collectHeaders(wanted, 3);
   registerRoutes();
-  _server.begin();
+  _server.begin();  // the core already sets TCP_NODELAY on the listener
 }
 
 void DmxWebServer::registerRoutes() {
@@ -105,8 +120,8 @@ void DmxWebServer::registerRoutes() {
   // script into it at build time. The board answers one client at a time, and a
   // subresource that lost that race took the styling of the whole page with it,
   // so there is deliberately no separate asset left to request.
-  _server.on("/", HTTP_GET, [this]() { serveFile("/www/index.html", "text/html"); });
-  _server.on("/index.html", HTTP_GET, [this]() { serveFile("/www/index.html", "text/html"); });
+  _server.on("/", HTTP_GET, [this]() { serveIndex(); });
+  _server.on("/index.html", HTTP_GET, [this]() { serveIndex(); });
   _server.on("/wiki.md", HTTP_GET, [this]() { serveFile("/www/wiki.md", "text/plain"); });
   // Browsers ask for this unprompted. Answering 204 costs one short response
   // instead of routing it through the 404 handler and its JSON body.
@@ -333,6 +348,8 @@ void DmxWebServer::registerRoutes() {
     // outside, which guessing from a browser's error message cannot.
     doc["uptime_ms"] = (uint32_t)millis();
     doc["free_heap"] = (uint32_t)ESP.getFreeHeap();
+    doc["loop_per_sec"] = loopRatePerSecond;
+    doc["loop_max_us"] = loopMaxUs;
     sendJson(200, doc);
   });
 

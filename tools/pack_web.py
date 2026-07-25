@@ -19,6 +19,7 @@ gitignored in full, which also stops the served copy of the wiki drifting from
 WIKI.md, since that copy is made here too.
 """
 
+import gzip
 import os
 import shutil
 
@@ -64,10 +65,22 @@ def main():
     html = html.replace(LINK_TAG, "<style>\n%s\n</style>" % css)
     html = html.replace(SCRIPT_TAG, "<script>\n%s\n</script>" % js)
 
-    if not os.path.isdir(out_dir):
-        os.makedirs(out_dir)
-    with open(os.path.join(out_dir, "index.html"), "w", encoding="utf-8", newline="\n") as handle:
-        handle.write(html)
+    # Start clean, so a file this script no longer produces cannot linger in the
+    # image and be served in place of the one it does.
+    if os.path.isdir(out_dir):
+        shutil.rmtree(out_dir)
+    os.makedirs(out_dir)
+
+    # Shipped gzipped, and only gzipped. The board writes the whole response
+    # synchronously, so its main loop is stalled for as long as the transfer
+    # takes and any connection arriving in that window queues behind it. Sending
+    # a quarter of the bytes shortens that stall by the same factor, which
+    # matters far more here than the flash it saves.
+    raw = html.encode("utf-8")
+    packed = os.path.join(out_dir, "index.html.gz")
+    with gzip.GzipFile(filename="", mode="wb", fileobj=open(packed, "wb"), mtime=0) as gz:
+        gz.write(raw)
+    compressed = os.path.getsize(packed)
 
     # The UI links to a local copy of the wiki, kept in step with the real one
     # here so the two cannot drift.
@@ -75,8 +88,9 @@ def main():
     if os.path.isfile(wiki):
         shutil.copyfile(wiki, os.path.join(out_dir, "wiki.md"))
 
-    print("pack_web: index.html %d bytes (css %d, js %d) -> %s"
-          % (len(html), len(css), len(js), os.path.relpath(out_dir, project_dir)))
+    print("pack_web: index.html.gz %d bytes from %d (css %d, js %d), %.0f%% smaller -> %s"
+          % (compressed, len(raw), len(css), len(js),
+             100.0 * (1 - compressed / float(len(raw))), os.path.relpath(out_dir, project_dir)))
 
 
 main()

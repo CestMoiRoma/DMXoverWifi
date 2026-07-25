@@ -71,7 +71,19 @@ void setup() {
   }
 }
 
+// Loop timing, reported by /api/info. A single-threaded board that serves HTTP
+// between DMX frames lives or dies on how long one pass takes: anything that
+// blocks here is time connections spend queued, and a queue that overflows is
+// answered with a reset rather than a wait.
+static uint32_t s_loopCount = 0;
+static uint32_t s_loopMaxUs = 0;
+static uint32_t s_loopWindowStart = 0;
+uint32_t loopRatePerSecond = 0;
+uint32_t loopMaxUs = 0;
+
 void loop() {
+  uint32_t loopStart = micros();
+
   if (!wifiManager.disabled()) {
     webServer.handleClient();
     wsServer.loop();
@@ -80,4 +92,16 @@ void loop() {
   }
   dmx.refreshIfDue();
   serialConsole.poll();
+
+  uint32_t elapsed = micros() - loopStart;
+  if (elapsed > s_loopMaxUs) s_loopMaxUs = elapsed;
+  s_loopCount++;
+  uint32_t now = millis();
+  if (now - s_loopWindowStart >= 1000) {
+    loopRatePerSecond = s_loopCount;
+    loopMaxUs = s_loopMaxUs;
+    s_loopCount = 0;
+    s_loopMaxUs = 0;
+    s_loopWindowStart = now;
+  }
 }

@@ -234,6 +234,12 @@ bool WifiManager::tryConnect(const WifiNet& net, uint32_t timeoutMs) {
     if (WiFi.status() == WL_CONNECTED) {
       _mode = "sta";
       _apSsid = "";
+      // Modem sleep parks the radio between beacons, so an incoming packet waits
+      // for the next one. That is tens of milliseconds added to every request,
+      // which on a board already serving one client at a time is enough to let a
+      // burst of connections pile up. This is a mains-powered DMX box, not a
+      // battery sensor: keep the radio awake.
+      WiFi.setSleep(false);
       startMdns();
       return true;
     }

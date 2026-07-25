@@ -137,11 +137,13 @@ pio run -e s2mini -t upload
 pio run -e s2mini -t uploadfs
 ```
 
-The web UI ships as a **single file**. `tools/pack_web.py` splices `web/style.css`
-and `web/app.js` into `web/index.html` before the image is packed, so loading the
-page is one request. The board answers one HTTP client at a time, and a
-stylesheet that lost that race took the styling of the whole UI with it. Edit the
-three files in `web/` normally; the packing happens at build time.
+The web UI ships as a **single gzipped file**. `tools/pack_web.py` splices
+`web/style.css` and `web/app.js` into `web/index.html` and compresses the result
+before the image is packed, so loading the page is one request of about 15 KB
+rather than three totalling 60 KB. The board answers one HTTP client at a time
+and writes each response synchronously, so both the extra connections and the
+extra bytes were time other requests spent queued behind it. Edit the three
+files in `web/` normally; the packing happens at build time.
 
 `uploadfs` builds the LittleFS image and writes it whole, so it **erases
 everything the board had stored**, config included. A plain `upload` leaves the

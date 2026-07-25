@@ -538,6 +538,19 @@ cost.
 | Main loop | `loop()` polls HTTP, MQTT, the DMX refresh and the serial console in turn. No preemption and no priorities, so a slow request delays the next frame. On the ESP8266 the single core is shared with the WiFi stack too |
 | DMX frame | The refresh interval is 25 ms, checked from the loop with `millis()` rather than driven by a timer interrupt. The break is generated in software around each frame |
 
+`/api/info` reports `loop_per_sec` and `loop_max_us`, which is the honest way to
+see whether the board is actually keeping up rather than inferring it from a
+browser error. A healthy idle board runs around a thousand passes a second with
+a worst pass under 20 ms; serving the page pushes the worst pass to roughly
+85 ms, which is the transfer itself, written synchronously.
+
+> A 513-slot frame takes about 23 ms on the wire. The transmit backend used to
+> wait for it *after* sending, which parked the main loop for 23 ms out of every
+> 25 and left the board answering the network about forty times a second.
+> Waiting for the *previous* frame before writing the next one costs nothing,
+> since the refresh comes round long after the UART has finished, and the loop
+> now runs some twenty-five times more often.
+
 The native C++ build removed the CircuitPython interpreter and its
 garbage-collector pauses, so the loop runs far tighter and the DMX frame is
 steadier than on the previous firmware. It did not make WiFi arrival

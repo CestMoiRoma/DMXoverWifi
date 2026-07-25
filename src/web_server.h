@@ -45,6 +45,7 @@ class DmxWebServer {
   void sendJson(int status, const JsonDocument& doc);
   void sendError(int status, const char* msg);
   bool serveFile(const char* path, const char* contentType);
+  void serveIndex();  // the packed, gzipped page
   String buildEnvText();
 
   // Whole-config snapshot and restore, the .json counterpart of the .env export.
