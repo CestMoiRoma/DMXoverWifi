@@ -1726,6 +1726,7 @@ async function renderSettings() {
   apForm.ap_ip.value = system.ap_ip || "";
 
   updateDirPinField();
+  document.getElementById("saveguard-form").save_guard.checked = system.save_guard !== false;
 
   const modules = await api("/api/modules");
   const modForm = document.getElementById("modules-form");
@@ -2124,6 +2125,11 @@ function updateDirPinField() {
 document
   .getElementById("system-pins-form")
   .dmx_dir_pin_enabled.addEventListener("change", updateDirPinField);
+
+document.getElementById("saveguard-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  await api("/api/system", "POST", { save_guard: e.target.save_guard.checked });
+});
 
 document.getElementById("reboot-btn").addEventListener("click", async () => {
   if (!confirm("Reboot the board? DMX output stops for a couple of seconds.")) return;

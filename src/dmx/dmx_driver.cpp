@@ -15,7 +15,12 @@ void DmxDriver::setChannel(uint16_t address, int value) {
   if (address < 1 || address > DMX_CHANNELS) return;
   if (value < 0) value = 0;
   if (value > 255) value = 255;
+  // Only a real change counts as dirty. A fader held still resends the same
+  // value forty times a second, and treating that as a change would keep the
+  // save-guard permanently about to write.
+  if (_buffer[address] == (uint8_t)value) return;
   _buffer[address] = (uint8_t)value;
+  _dirty = true;
 }
 
 uint8_t DmxDriver::getChannel(uint16_t address) const {

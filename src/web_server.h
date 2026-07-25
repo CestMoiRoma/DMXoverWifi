@@ -17,6 +17,7 @@ using WebServerClass = WebServer;
 #include "labels.h"
 #include "modules.h"
 #include "mqtt_manager.h"
+#include "save_guard.h"
 #include "wifi_manager.h"
 
 // Serves the web UI (unless WITH_WEBUI is 0) and the REST API the UI, the MQTT
@@ -25,9 +26,10 @@ using WebServerClass = WebServer;
 class DmxWebServer {
  public:
   DmxWebServer(DeviceManager& devices, LabelStore& labels, ModuleSettings& modules,
-               WifiManager& wifi, EthernetManager& ethernet, MqttManager& mqtt)
+               WifiManager& wifi, EthernetManager& ethernet, MqttManager& mqtt,
+               SaveGuard& saveGuard)
       : _devices(devices), _labels(labels), _modules(modules), _wifi(wifi), _ethernet(ethernet),
-        _mqtt(mqtt), _server(80) {}
+        _mqtt(mqtt), _saveGuard(saveGuard), _server(80) {}
 
   void begin();
   void handleClient() { _server.handleClient(); }
@@ -59,5 +61,6 @@ class DmxWebServer {
   WifiManager& _wifi;
   EthernetManager& _ethernet;
   MqttManager& _mqtt;
+  SaveGuard& _saveGuard;
   WebServerClass _server;
 };

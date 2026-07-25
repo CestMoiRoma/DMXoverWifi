@@ -374,6 +374,9 @@ void DmxWebServer::registerRoutes() {
     settings_store::load("system.json", cfg);
     for (JsonPairConst kv : body.as<JsonObjectConst>()) cfg[kv.key()] = kv.value();
     settings_store::save("system.json", cfg);
+    // Applied at once rather than at the next boot, so the checkbox is not
+    // describing something that has not happened yet.
+    if (!body["save_guard"].isNull()) _saveGuard.setEnabled(body["save_guard"].as<bool>());
     sendJson(200, cfg);
   });
 

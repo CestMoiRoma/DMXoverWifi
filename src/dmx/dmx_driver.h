@@ -16,6 +16,13 @@ class DmxDriver {
   void setChannel(uint16_t address, int value);   // address 1..512
   uint8_t getChannel(uint16_t address) const;      // address 1..512
 
+  // True once a write has actually changed something. The one place every
+  // write passes through, whatever drove it: the UI, MQTT, the websocket, the
+  // serial console, the binary protocol or a blackout. Anything watching for
+  // changes hooks here rather than trying to catch them at each source.
+  bool dirty() const { return _dirty; }
+  void clearDirty() { _dirty = false; }
+
   void refreshIfDue();
   void sendFrame();
 
@@ -25,4 +32,5 @@ class DmxDriver {
   uint8_t _buffer[DMX_CHANNELS + 1] = {0};          // [0] is the DMX start code
   int _dirPin = -1;
   uint32_t _lastSend = 0;
+  bool _dirty = false;
 };

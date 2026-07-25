@@ -32,6 +32,7 @@ static void seedDefault(const char* name, JsonDocument& doc) {
     doc["api_key"] = "";  // minted on first boot by ModuleSettings
   } else if (strcmp(name, "system.json") == 0) {
     doc["wifi_enabled"] = true;
+    doc["save_guard"] = true;
     doc["dmx_tx_pin"] = DEFAULT_DMX_TX_PIN;
     doc["dmx_dir_pin_enabled"] = false;
     doc["dmx_dir_pin"] = DEFAULT_DMX_DIR_PIN;

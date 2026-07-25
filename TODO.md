@@ -118,9 +118,9 @@ sent whole on every read.
 
 ### Header
 
-- **Blackout**, a red button: every channel to zero.
-- **Save-guard**: keep the channel state so a reboot or a power cut comes back
-  to the values that were live.
+- ~~Blackout, a red button: every channel to zero.~~ Done.
+- ~~Save-guard.~~ Done: a sparse table of address to value, only the channels
+  holding one, written after ten seconds of stillness.
 
 ### Scenes, a new page
 

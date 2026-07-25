@@ -8,6 +8,7 @@
 #include "labels.h"
 #include "modules.h"
 #include "mqtt_manager.h"
+#include "save_guard.h"
 #include "serial_console.h"
 #include "settings_store.h"
 #include "version.h"
@@ -19,11 +20,13 @@ static DmxDriver dmx;
 static DeviceManager deviceManager(dmx);
 static LabelStore labelStore;
 static ModuleSettings modules;
+static SaveGuard saveGuard;
 static WifiManager wifiManager;
 static EthernetManager ethernet;
 static MqttManager mqttManager(deviceManager);
 static WsServer wsServer(deviceManager, modules);
-static DmxWebServer webServer(deviceManager, labelStore, modules, wifiManager, ethernet, mqttManager);
+static DmxWebServer webServer(deviceManager, labelStore, modules, wifiManager, ethernet,
+                              mqttManager, saveGuard);
 static SerialConsole serialConsole(deviceManager, labelStore, wifiManager, mqttManager);
 
 void setup() {
@@ -43,6 +46,8 @@ void setup() {
 
   deviceManager.begin();
   labelStore.begin();
+  // After the driver exists, so the stored look can be put straight back.
+  saveGuard.begin(dmx);
   modules.begin();
   serialConsole.begin();
 
@@ -98,6 +103,7 @@ void loop() {
     ethernet.loop();
     if (modules.mqttEnabled()) mqttManager.loop();
   }
+  saveGuard.loop();
   deviceManager.tickBursts();
   dmx.refreshIfDue();
   serialConsole.poll();
