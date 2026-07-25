@@ -960,22 +960,22 @@ function roleLabel(t, label, role) {
   return n > 1 ? label + " (" + n + ")" : label;
 }
 
-function roleFader(t, role, label, reversed) {
+// `vertical` picks the shape: standing up for the column beside a widget,
+// lying flat for a card that is nothing but this one control.
+function roleFader(t, role, label, reversed, vertical) {
   if (!t.has(role)) return null;
   // A reversed channel is flipped on the way in and on the way out, so the
-  // fader reads bottom to top as slow to fast whichever way the fixture counts.
+  // fader always reads low to high as slow to fast whichever way the fixture
+  // counts.
   const flip = (v) => (reversed ? 255 - v : v);
   const current = flip(t.get(role));
-
-  const block = el("div", { class: "fader" });
-  block.appendChild(el("label", {}, [roleLabel(t, label, role)]));
 
   const input = el("input", {
     type: "range",
     min: "0",
     max: "255",
     value: String(current),
-    class: "vfader",
+    class: vertical ? "vfader" : "",
   });
   const out = el("span", { class: "ez-readout" }, [String(current)]);
 
@@ -995,14 +995,23 @@ function roleFader(t, role, label, reversed) {
   });
   t.claim(role, state);
 
-  const body = el("div", { class: "fader-body" }, [
-    percentColumn((value) => {
-      paint(value);
-      t.send(role, flip(value), true);
-    }),
-    input,
-  ]);
-  block.appendChild(body);
+  const jump = (value) => {
+    paint(value);
+    t.send(role, flip(value), true);
+  };
+
+  if (!vertical) {
+    const block = el("div", { class: "fader flat" });
+    block.appendChild(
+      el("div", { class: "ez-row" }, [el("label", {}, [roleLabel(t, label, role)]), input, out])
+    );
+    block.appendChild(percentRow(jump));
+    return block;
+  }
+
+  const block = el("div", { class: "fader" });
+  block.appendChild(el("label", {}, [roleLabel(t, label, role)]));
+  block.appendChild(el("div", { class: "fader-body" }, [percentColumn(jump), input]));
   block.appendChild(out);
   return block;
 }
@@ -1464,29 +1473,40 @@ async function savePresets(device, presets) {
 
 function ezWidgets(t) {
   const kind = t.kind;
-  const parts = [];
 
-  if (kind === "dimmer") parts.push(roleFader(t, "level", "Level"));
-  else if (kind === "strobe") parts.push(roleFader(t, "strobe", "Strobe"));
-  else if (kind === "mono") parts.push(roleFader(t, "level", "Light"));
-  else if (kind === "rgb" || kind === "rgbw") parts.push(colourWheel(t, kind === "rgbw"));
-  else if (kind === "cwww") parts.push(whitesSlider(t));
-  else if (kind === "smoke") parts.push(smokeControls(t));
-  else if (kind === "motion") parts.push(motionPad(t));
-
-  // Shared optional roles, drawn only where they were claimed. Faders go side
-  // by side in one row, which is both how a console looks and how several of
-  // them fit on a card without turning it into a column of sliders.
-  const faders = [];
-  if (kind !== "dimmer") faders.push(roleFader(t, "dimmer", "Master dimmer"));
-  if (kind !== "strobe") faders.push(roleFader(t, "strobe", "Strobe"));
-  if (kind === "motion") {
-    faders.push(roleFader(t, "speed", "Movement speed", t.setting("reverse_speed", "") === "1"));
+  // Cards that are only a control: the fader lies flat with its percentages
+  // underneath. Standing one slider up in a wide card is all margin.
+  if (kind === "dimmer" || kind === "strobe" || kind === "mono") {
+    const label = kind === "strobe" ? "Strobe" : kind === "dimmer" ? "Level" : "Light";
+    const role = kind === "strobe" ? "strobe" : "level";
+    const parts = [roleFader(t, role, label, false, false)];
+    if (kind !== "strobe") parts.push(roleFader(t, "strobe", "Strobe", false, false));
+    if (kind !== "dimmer") parts.push(roleFader(t, "dimmer", "Master dimmer", false, false));
+    return parts.filter(Boolean);
   }
-  const present = faders.filter(Boolean);
-  if (present.length) parts.push(el("div", { class: "fader-row" }, present));
 
-  return parts.filter(Boolean);
+  // Everything else: the widget on the left, its faders standing on the right.
+  let main = null;
+  if (kind === "rgb" || kind === "rgbw") main = colourWheel(t, kind === "rgbw");
+  else if (kind === "cwww") main = whitesSlider(t);
+  else if (kind === "smoke") main = smokeControls(t);
+  else if (kind === "motion") main = motionPad(t);
+  if (!main) return [];
+
+  const faders = [
+    roleFader(t, "dimmer", "Master dimmer", false, true),
+    roleFader(t, "strobe", "Strobe", false, true),
+  ];
+  if (kind === "motion") {
+    faders.push(
+      roleFader(t, "speed", "Movement speed", t.setting("reverse_speed", "") === "1", true)
+    );
+  }
+  const standing = faders.filter(Boolean);
+
+  const layout = el("div", { class: "ez-layout" }, [el("div", { class: "ez-main" }, [main])]);
+  if (standing.length) layout.appendChild(el("div", { class: "fader-row" }, standing));
+  return [layout];
 }
 
 function ezCardBody(device) {
