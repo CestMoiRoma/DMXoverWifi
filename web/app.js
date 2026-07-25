@@ -740,6 +740,11 @@ function ezSetting(device, key, fallback) {
 }
 
 // ---- EZ widgets ----
+//
+// Every widget draws against a *target* rather than against a fixture. A device
+// target maps a role to one channel; a group target maps it to a set of them.
+// That is the whole reason a colour wheel can drive one PAR or the reds of a
+// whole bar without the wheel knowing which it is doing.
 
 const PERCENTS = [0, 25, 50, 75, 100];
 const clamp255 = (v) => Math.max(0, Math.min(255, Math.round(v)));
@@ -762,12 +767,94 @@ function ezSend(device, role, value, immediate) {
   sendValue(device.id, offset, clamp255(value), immediate);
 }
 
-// Lets a remote change repaint this widget, the same way lite controls already
-// do, so two browsers watching one rig agree.
-function ezRegister(device, role, apply) {
-  const offset = ezRoleOffset(device, role);
-  if (offset === null) return;
-  channelControls.set(device.id + ":" + offset, { apply: apply });
+// Groups hold channel uids, so they need the same write path by another key.
+// Resolving to a device and offset keeps the throttle, the cache write-through
+// and the websocket exactly as they are for a fixture.
+function resolveUid(uid) {
+  for (const device of devicesCache) {
+    const channel = (device.channels || []).find((c) => c.uid === uid);
+    if (channel) return { deviceId: device.id, offset: channel.offset, channel: channel };
+  }
+  return null;
+}
+
+function sendByUid(uid, value, immediate) {
+  const found = resolveUid(uid);
+  if (found) sendValue(found.deviceId, found.offset, clamp255(value), immediate);
+}
+
+function deviceTarget(device) {
+  return {
+    id: device.id,
+    kind: (device.ez && device.ez.kind) || "",
+    has: (role) => ezRoleOffset(device, role) !== null,
+    count: (role) => (ezRoleOffset(device, role) !== null ? 1 : 0),
+    get: (role) => ezChannelValue(device, role),
+    send: (role, value, immediate) => ezSend(device, role, value, immediate),
+    watch: (role, apply) => {
+      const offset = ezRoleOffset(device, role);
+      if (offset !== null) channelControls.set(device.id + ":" + offset, { apply: apply });
+    },
+    // A fader owns its entry, so a drag is not fought by an echo mid-move.
+    claim: (role, state) => {
+      const offset = ezRoleOffset(device, role);
+      if (offset !== null) channelControls.set(device.id + ":" + offset, state);
+    },
+    setting: (key, fallback) => ezSetting(device, key, fallback),
+    burst: (role, seconds) => {
+      const offset = ezRoleOffset(device, role);
+      if (offset === null) return;
+      api("/api/devices/" + device.id + "/burst", "POST", {
+        offset: offset,
+        value: 255,
+        ms: Math.round(seconds * 1000),
+      });
+    },
+  };
+}
+
+function groupTarget(group) {
+  const uidsFor = (role) => (group.roles && group.roles[role]) || [];
+  const eachResolved = (role, fn) => {
+    uidsFor(role).forEach((uid) => {
+      const found = resolveUid(uid);
+      if (found) fn(found);
+    });
+  };
+  return {
+    id: group.id,
+    kind: group.kind || "",
+    has: (role) => uidsFor(role).length > 0,
+    count: (role) => uidsFor(role).length,
+    // The first member speaks for the set. They are driven together, so they
+    // agree unless something outside the group moved one of them.
+    get: (role) => {
+      const first = resolveUid(uidsFor(role)[0]);
+      return first && typeof first.channel.value === "number" ? first.channel.value : 0;
+    },
+    send: (role, value, immediate) => {
+      uidsFor(role).forEach((uid) => sendByUid(uid, value, immediate));
+    },
+    watch: (role, apply) => {
+      eachResolved(role, (f) => channelControls.set(f.deviceId + ":" + f.offset, { apply: apply }));
+    },
+    claim: (role, state) => {
+      eachResolved(role, (f) => channelControls.set(f.deviceId + ":" + f.offset, state));
+    },
+    setting: (key, fallback) => {
+      const value = (group.settings || {})[key];
+      return value === undefined || value === "" ? fallback : value;
+    },
+    burst: (role, seconds) => {
+      eachResolved(role, (f) =>
+        api("/api/devices/" + f.deviceId + "/burst", "POST", {
+          offset: f.offset,
+          value: 255,
+          ms: Math.round(seconds * 1000),
+        })
+      );
+    },
+  };
 }
 
 function percentRow(onPick) {
@@ -780,14 +867,20 @@ function percentRow(onPick) {
   return row;
 }
 
-// A labelled fader plus its percentage row, bound to one role.
-function roleFader(device, role, label) {
-  if (ezRoleOffset(device, role) === null) return null;
+// States how many channels a control moves, when that is more than one. A
+// control that silently drives eight fixtures is a trap.
+function roleLabel(t, label, role) {
+  const n = t.count(role);
+  return n > 1 ? label + " (" + n + ")" : label;
+}
+
+function roleFader(t, role, label) {
+  if (!t.has(role)) return null;
   const block = el("div", { class: "ez-block" });
-  const current = ezChannelValue(device, role);
+  const current = t.get(role);
 
   const head = el("div", { class: "ez-row" });
-  head.appendChild(el("label", {}, [label]));
+  head.appendChild(el("label", {}, [roleLabel(t, label, role)]));
   const input = el("input", { type: "range", min: "0", max: "255", value: String(current) });
   const out = el("span", { class: "ez-readout" }, [String(current)]);
   head.appendChild(input);
@@ -801,20 +894,19 @@ function roleFader(device, role, label) {
   input.addEventListener("input", () => {
     state.dragging = true;
     out.textContent = input.value;
-    ezSend(device, role, parseInt(input.value, 10), false);
+    t.send(role, parseInt(input.value, 10), false);
   });
   input.addEventListener("change", () => {
     state.dragging = false;
-    ezSend(device, role, parseInt(input.value, 10), true);
+    t.send(role, parseInt(input.value, 10), true);
   });
-  const offset = ezRoleOffset(device, role);
-  channelControls.set(device.id + ":" + offset, state);
+  t.claim(role, state);
 
   block.appendChild(head);
   block.appendChild(
     percentRow((value) => {
       paint(value);
-      ezSend(device, role, value, true);
+      t.send(role, value, true);
     })
   );
   return block;
@@ -879,7 +971,7 @@ function drawColourWheel(canvas) {
   ctx.fill();
 }
 
-function colourWheel(device, hasWhite) {
+function colourWheel(t, hasWhite) {
   const block = el("div", { class: "ez-block wheel-block" });
   const size = 168;
   const canvas = el("canvas", { width: String(size), height: String(size), class: "wheel" });
@@ -898,17 +990,14 @@ function colourWheel(device, hasWhite) {
   };
 
   const readBack = () => {
-    placeMarker(
-      ezChannelValue(device, "red"),
-      ezChannelValue(device, "green"),
-      ezChannelValue(device, "blue"),
-      hasWhite ? ezChannelValue(device, "white") : 0
-    );
+    placeMarker(t.get("red"), t.get("green"), t.get("blue"), hasWhite ? t.get("white") : 0);
   };
   readBack();
 
   const apply = (rgb) => {
-    let [r, g, b] = rgb;
+    let r = rgb[0];
+    let g = rgb[1];
+    let b = rgb[2];
     let w = 0;
     if (hasWhite) {
       // Whatever all three share is the white channel's job: it is a cleaner and
@@ -918,11 +1007,14 @@ function colourWheel(device, hasWhite) {
       g -= w;
       b -= w;
     }
-    ezSend(device, "red", r, false);
-    ezSend(device, "green", g, false);
-    ezSend(device, "blue", b, false);
-    if (hasWhite) ezSend(device, "white", w, false);
+    t.send("red", r, false);
+    t.send("green", g, false);
+    t.send("blue", b, false);
+    if (hasWhite) t.send("white", w, false);
     placeMarker(r, g, b, w);
+    // Picking a colour on a fixture whose dimmer is down would otherwise look
+    // like nothing happened at all.
+    if (t.has("dimmer") && t.get("dimmer") === 0) t.send("dimmer", 255, true);
   };
 
   const pick = (event) => {
@@ -947,21 +1039,30 @@ function colourWheel(device, hasWhite) {
   canvas.addEventListener("pointerup", () => {
     picking = false;
   });
+  // Double-click returns to the middle, which is white: the same gesture the
+  // joystick uses to come home.
+  canvas.addEventListener("dblclick", () => {
+    picking = false;
+    apply([255, 255, 255]);
+  });
 
   ["red", "green", "blue"].concat(hasWhite ? ["white"] : []).forEach((role) => {
-    ezRegister(device, role, () => readBack());
+    t.watch(role, () => readBack());
   });
 
   block.appendChild(holder);
+  if (t.count("red") > 1) {
+    block.appendChild(el("p", { class: "hint" }, ["Drives " + t.count("red") + " fixtures."]));
+  }
   return block;
 }
 
 // -- warm and cold white --
 
-function whitesSlider(device) {
+function whitesSlider(t) {
   const block = el("div", { class: "ez-block whites-block" });
-  const warm = ezChannelValue(device, "warm");
-  const cold = ezChannelValue(device, "cold");
+  const warm = t.get("warm");
+  const cold = t.get("cold");
   // Position is a crossfade: the top is all warm, the bottom all cold.
   const start = warm + cold === 0 ? 128 : Math.round((cold * 255) / (warm + cold));
 
@@ -971,14 +1072,14 @@ function whitesSlider(device) {
     max: "255",
     value: String(start),
     class: "whites",
-    orient: "vertical",
   });
   const readout = el("span", { class: "ez-readout" }, ["mix"]);
 
   const apply = (pos) => {
-    ezSend(device, "warm", 255 - pos, false);
-    ezSend(device, "cold", pos, false);
+    t.send("warm", 255 - pos, false);
+    t.send("cold", pos, false);
     readout.textContent = pos < 96 ? "warm" : pos > 160 ? "cold" : "mix";
+    if (t.has("dimmer") && t.get("dimmer") === 0) t.send("dimmer", 255, true);
   };
   input.addEventListener("input", () => apply(parseInt(input.value, 10)));
 
@@ -990,26 +1091,17 @@ function whitesSlider(device) {
 
 // -- smoke --
 
-function smokeControls(device) {
+function smokeControls(t) {
   const block = el("div", { class: "ez-block" });
-  const sliderMode = ezSetting(device, "mode", "onoff") === "slider";
-  const autoOff = parseInt(ezSetting(device, "auto_off_s", "0"), 10) || 0;
-  const offset = ezRoleOffset(device, "output");
-
-  const burst = (seconds) => {
-    api("/api/devices/" + device.id + "/burst", "POST", {
-      offset: offset,
-      value: 255,
-      ms: Math.round(seconds * 1000),
-    });
-  };
+  const sliderMode = t.setting("mode", "onoff") === "slider";
+  const autoOff = parseInt(t.setting("auto_off_s", "0"), 10) || 0;
 
   if (sliderMode) {
-    const fader = roleFader(device, "output", "Pump");
+    const fader = roleFader(t, "output", "Pump");
     if (fader) block.appendChild(fader);
   } else {
     const row = el("div", { class: "ez-row" });
-    let on = ezChannelValue(device, "output") > 0;
+    let on = t.get("output") > 0;
     const button = el("button", { class: "channel-btn" + (on ? " on" : "") }, [on ? "On" : "Off"]);
     const paint = (value) => {
       on = value > 0;
@@ -1021,11 +1113,11 @@ function smokeControls(device) {
       paint(next);
       // With an auto-off set, "on" goes through the board's burst timer, so a
       // browser that disappears cannot leave the machine running.
-      if (next && autoOff > 0) burst(autoOff);
-      else ezSend(device, "output", next, true);
+      if (next && autoOff > 0) t.burst("output", autoOff);
+      else t.send("output", next, true);
     });
-    ezRegister(device, "output", paint);
-    row.appendChild(el("label", {}, ["Output"]));
+    t.watch("output", paint);
+    row.appendChild(el("label", {}, [roleLabel(t, "Output", "output")]));
     row.appendChild(button);
     block.appendChild(row);
   }
@@ -1033,12 +1125,12 @@ function smokeControls(device) {
   const bursts = el("div", { class: "pct-row" });
   [1, 3, 5].forEach((s) => {
     const btn = el("button", { type: "button", class: "secondary small" }, ["Burst " + s + "s"]);
-    btn.addEventListener("click", () => burst(s));
+    btn.addEventListener("click", () => t.burst("output", s));
     bursts.appendChild(btn);
   });
   const custom = el("input", { type: "number", min: "1", max: "30", value: "10", class: "burst-n" });
   const go = el("button", { type: "button", class: "secondary small" }, ["Burst"]);
-  go.addEventListener("click", () => burst(parseInt(custom.value, 10) || 1));
+  go.addEventListener("click", () => t.burst("output", parseInt(custom.value, 10) || 1));
   bursts.appendChild(custom);
   bursts.appendChild(go);
   block.appendChild(bursts);
@@ -1055,17 +1147,17 @@ function smokeControls(device) {
 
 // -- motion --
 
-function motionPad(device) {
+function motionPad(t) {
   const block = el("div", { class: "ez-block" });
-  const invertH = ezSetting(device, "invert_h", "") === "1";
-  const invertV = ezSetting(device, "invert_v", "") === "1";
-  const invertHFine = ezSetting(device, "invert_h_fine", "") === "1";
-  const invertVFine = ezSetting(device, "invert_v_fine", "") === "1";
-  const maxStep = Math.max(1, parseInt(ezSetting(device, "max_step", "10"), 10) || 10);
-  const arrowStep = Math.max(1, parseInt(ezSetting(device, "arrow_step", "5"), 10) || 5);
-  const fineOnly = ezSetting(device, "fine_mode", "both") === "fine";
-  const hasFineH = ezRoleOffset(device, "horizontal_fine") !== null;
-  const hasFineV = ezRoleOffset(device, "vertical_fine") !== null;
+  const invertH = t.setting("invert_h", "") === "1";
+  const invertV = t.setting("invert_v", "") === "1";
+  const invertHFine = t.setting("invert_h_fine", "") === "1";
+  const invertVFine = t.setting("invert_v_fine", "") === "1";
+  const maxStep = Math.max(1, parseInt(t.setting("max_step", "10"), 10) || 10);
+  const arrowStep = Math.max(1, parseInt(t.setting("arrow_step", "5"), 10) || 5);
+  const fineOnly = t.setting("fine_mode", "both") === "fine";
+  const hasFineH = t.has("horizontal_fine");
+  const hasFineV = t.has("vertical_fine");
   const hasAnyFine = hasFineH || hasFineV;
 
   // Which channels the stick is on right now. Position "move" is always coarse
@@ -1093,7 +1185,7 @@ function motionPad(device) {
   modeRow.appendChild(fineBtn);
   if (!hasAnyFine) {
     fineBtn.disabled = true;
-    fineBtn.title = "No fine channels are bound on this fixture";
+    fineBtn.title = "No fine channels are bound";
   }
 
   const pad = el("div", { class: "joystick", tabindex: "0" });
@@ -1116,43 +1208,37 @@ function motionPad(device) {
   // A fine channel that counts backwards on this fixture is corrected here, so
   // everything above it can think in one direction.
   const readFine = (role, inverted) => {
-    const raw = ezChannelValue(device, role);
+    const raw = t.get(role);
     return inverted ? 255 - raw : raw;
   };
   const writeFine = (role, value, inverted) => {
-    ezSend(device, role, inverted ? 255 - value : value, false);
+    t.send(role, inverted ? 255 - value : value, false);
   };
 
   const nudgeAxis = (coarseRole, fineRole, hasFine, fineInverted, delta) => {
     if (delta === 0) return;
-
-    // Position "move": the coarse channel and nothing else, whatever fine
-    // channels exist.
     if (stickMode === "move" || !hasFine) {
-      ezSend(device, coarseRole, ezChannelValue(device, coarseRole) + delta, false);
+      t.send(coarseRole, t.get(coarseRole) + delta, false);
       return;
     }
-
-    // Position "fine", card set to fine only.
     if (fineOnly) {
-      writeFine(fineRole, Math.max(0, Math.min(255, readFine(fineRole, fineInverted) + delta)), fineInverted);
+      const next = Math.max(0, Math.min(255, readFine(fineRole, fineInverted) + delta));
+      writeFine(fineRole, next, fineInverted);
       return;
     }
-
-    // Position "fine", card set to both: coarse and fine as one 16-bit value,
-    // so a step of one is the smallest movement the fixture can make rather
-    // than 1/256th of its travel.
-    const wide = ezChannelValue(device, coarseRole) * 256 + readFine(fineRole, fineInverted);
+    // Coarse and fine as one 16-bit value, so a step of one is the smallest
+    // movement the fixture can make rather than 1/256th of its travel.
+    const wide = t.get(coarseRole) * 256 + readFine(fineRole, fineInverted);
     const next = Math.max(0, Math.min(65535, wide + delta));
-    ezSend(device, coarseRole, Math.floor(next / 256), false);
+    t.send(coarseRole, Math.floor(next / 256), false);
     writeFine(fineRole, next % 256, fineInverted);
   };
 
   const tick = () => {
-    const dx = stepFor(invertH ? -vector.x : vector.x);
-    const dy = stepFor(invertV ? -vector.y : vector.y);
-    nudgeAxis("horizontal", "horizontal_fine", hasFineH, invertHFine, dx);
-    nudgeAxis("vertical", "vertical_fine", hasFineV, invertVFine, dy);
+    nudgeAxis("horizontal", "horizontal_fine", hasFineH, invertHFine,
+              stepFor(invertH ? -vector.x : vector.x));
+    nudgeAxis("vertical", "vertical_fine", hasFineV, invertVFine,
+              stepFor(invertV ? -vector.y : vector.y));
   };
 
   const startTicking = () => {
@@ -1191,11 +1277,11 @@ function motionPad(device) {
   // No pointerleave handler: the pointer is captured, so dragging past the edge
   // of the pad is a legitimate full deflection rather than a reason to stop.
 
-  // Double-click centres, which is how you find a head that has wandered.
   pad.addEventListener("dblclick", () => {
     stopTicking();
-    ["horizontal", "vertical"].forEach((role) => ezSend(device, role, 128, true));
-    ["horizontal_fine", "vertical_fine"].forEach((role) => ezSend(device, role, 128, true));
+    ["horizontal", "vertical", "horizontal_fine", "vertical_fine"].forEach((role) =>
+      t.send(role, 128, true)
+    );
   });
 
   const KEYS = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
@@ -1205,10 +1291,11 @@ function motionPad(device) {
     e.preventDefault();
     // Arrows are a fixed step, not the stick's rate curve: one press is one
     // increment of whatever the card was told, so a nudge is repeatable rather
-    // than depending on how long a finger stayed down. Holding a key repeats
-    // through the browser's own key repeat.
-    nudgeAxis("horizontal", "horizontal_fine", hasFineH, invertHFine, (invertH ? -1 : 1) * key[0] * arrowStep);
-    nudgeAxis("vertical", "vertical_fine", hasFineV, invertVFine, (invertV ? -1 : 1) * key[1] * arrowStep);
+    // than depending on how long a finger stayed down.
+    nudgeAxis("horizontal", "horizontal_fine", hasFineH, invertHFine,
+              (invertH ? -1 : 1) * key[0] * arrowStep);
+    nudgeAxis("vertical", "vertical_fine", hasFineV, invertVFine,
+              (invertV ? -1 : 1) * key[1] * arrowStep);
   });
 
   block.appendChild(modeRow);
@@ -1231,7 +1318,6 @@ function motionPad(device) {
 function presetRow(device) {
   const presets = (device.ez && device.ez.presets) || [];
   const row = el("div", { class: "pct-row" });
-
   const roles = Object.keys((device.ez && device.ez.roles) || {});
 
   presets.forEach((preset, index) => {
@@ -1278,26 +1364,33 @@ async function savePresets(device, presets) {
 }
 
 // -- assembling a card --
+//
+// Shared by fixtures and groups: the target hides which one it is.
 
-function ezCardBody(device) {
-  const kind = (device.ez && device.ez.kind) || "";
+function ezWidgets(t) {
+  const kind = t.kind;
   const parts = [];
 
-  if (kind === "dimmer") parts.push(roleFader(device, "level", "Level"));
-  else if (kind === "strobe") parts.push(roleFader(device, "strobe", "Strobe"));
-  else if (kind === "mono") parts.push(roleFader(device, "level", "Light"));
-  else if (kind === "rgb" || kind === "rgbw") parts.push(colourWheel(device, kind === "rgbw"));
-  else if (kind === "cwww") parts.push(whitesSlider(device));
-  else if (kind === "smoke") parts.push(smokeControls(device));
-  else if (kind === "motion") parts.push(motionPad(device));
+  if (kind === "dimmer") parts.push(roleFader(t, "level", "Level"));
+  else if (kind === "strobe") parts.push(roleFader(t, "strobe", "Strobe"));
+  else if (kind === "mono") parts.push(roleFader(t, "level", "Light"));
+  else if (kind === "rgb" || kind === "rgbw") parts.push(colourWheel(t, kind === "rgbw"));
+  else if (kind === "cwww") parts.push(whitesSlider(t));
+  else if (kind === "smoke") parts.push(smokeControls(t));
+  else if (kind === "motion") parts.push(motionPad(t));
 
-  // Shared optional roles, drawn only where the fixture claimed them.
-  if (kind !== "dimmer") parts.push(roleFader(device, "dimmer", "Master dimmer"));
-  if (kind !== "strobe") parts.push(roleFader(device, "strobe", "Strobe"));
-  if (kind === "motion") parts.push(roleFader(device, "speed", "Movement speed"));
+  // Shared optional roles, drawn only where they were claimed.
+  if (kind !== "dimmer") parts.push(roleFader(t, "dimmer", "Master dimmer"));
+  if (kind !== "strobe") parts.push(roleFader(t, "strobe", "Strobe"));
+  if (kind === "motion") parts.push(roleFader(t, "speed", "Movement speed"));
 
-  if (kind !== "smoke") parts.push(presetRow(device));
   return parts.filter(Boolean);
+}
+
+function ezCardBody(device) {
+  const parts = ezWidgets(deviceTarget(device));
+  if ((device.ez && device.ez.kind) !== "smoke") parts.push(presetRow(device));
+  return parts;
 }
 
 // ---- device modal: create, edit and duplicate ----
@@ -1804,41 +1897,66 @@ document.getElementById("scene-sort").addEventListener("change", (e) => {
 let editingSceneId = null;
 
 // One row per channel of every fixture, ticked into the scene with the value it
-// should take. `values` seeds it when editing.
-function renderChannelPicker(container, values, withValues) {
+// should take. A search box sits over it, so the selection is held here rather
+// than read back out of the DOM: with a filter in front of it, what is on screen
+// is only part of the answer.
+let scenePicked = {};
+
+function renderChannelPicker(container, values) {
+  scenePicked = Object.assign({}, values);
   container.innerHTML = "";
   if (devicesCache.length === 0) {
     container.appendChild(el("p", { class: "hint" }, ["No fixtures yet."]));
     return;
   }
-  devicesCache.forEach((device) => {
-    const block = el("div", { class: "picker-block" });
-    block.appendChild(el("h3", {}, [device.name]));
-    device.channels.forEach((channel) => {
-      const row = el("div", { class: "picker-row" });
-      const box = el("input", {
-        type: "checkbox",
-        class: "pick-uid",
-        "data-uid": channel.uid,
+
+  const list = el("div", { class: "picker-scroll" });
+
+  const draw = (term) => {
+    list.innerHTML = "";
+    let shown = 0;
+    devicesCache.forEach((device) => {
+      const matches = device.channels.filter((channel) => {
+        if (!term) return true;
+        return (device.name + " " + channel.name).toLowerCase().indexOf(term) !== -1;
       });
-      const has = Object.prototype.hasOwnProperty.call(values, channel.uid);
-      box.checked = has;
-      row.appendChild(box);
-      row.appendChild(el("span", { class: "grow" }, [channel.name]));
-      if (withValues) {
+      if (matches.length === 0) return;
+      const block = el("div", { class: "picker-block" });
+      block.appendChild(el("h3", {}, [device.name]));
+      matches.forEach((channel) => {
+        shown++;
+        const has = Object.prototype.hasOwnProperty.call(scenePicked, channel.uid);
+        const row = el("div", { class: "picker-row" });
+        const box = el("input", { type: "checkbox" });
+        box.checked = has;
         const value = el("input", {
           type: "number",
           min: "0",
           max: "255",
           class: "pick-value",
-          value: String(has ? values[channel.uid] : channel.value || 0),
+          value: String(has ? scenePicked[channel.uid] : channel.value || 0),
         });
+        const sync = () => {
+          if (box.checked) scenePicked[channel.uid] = parseInt(value.value, 10) || 0;
+          else delete scenePicked[channel.uid];
+        };
+        box.addEventListener("change", sync);
+        value.addEventListener("input", sync);
+        row.appendChild(box);
+        row.appendChild(el("span", { class: "grow" }, [channel.name]));
         row.appendChild(value);
-      }
-      block.appendChild(row);
+        block.appendChild(row);
+      });
+      list.appendChild(block);
     });
-    container.appendChild(block);
-  });
+    if (shown === 0) list.appendChild(el("p", { class: "hint" }, ["Nothing matches."]));
+  };
+
+  const search = el("input", { type: "search", placeholder: "Filter by fixture or channel" });
+  search.addEventListener("input", () => draw(search.value.trim().toLowerCase()));
+  container.appendChild(search);
+  container.appendChild(list);
+  draw("");
 }
 
 function openSceneModal(scene) {
@@ -1848,7 +1966,7 @@ function openSceneModal(scene) {
   form.description.value = scene ? scene.description || "" : "";
   const values = {};
   if (scene) scene.steps.forEach((step) => (values[step.uid] = step.value));
-  renderChannelPicker(document.getElementById("scene-picker"), values, true);
+  renderChannelPicker(document.getElementById("scene-picker"), values);
   document.getElementById("scene-title").textContent = scene ? "Edit scene" : "New scene";
   document.getElementById("scene-submit").textContent = scene ? "Save changes" : "Create scene";
   document.getElementById("scene-modal").hidden = false;
@@ -1872,21 +1990,13 @@ document.getElementById("scene-capture").addEventListener("click", async () => {
       if (channel.value) values[channel.uid] = channel.value;
     });
   });
-  renderChannelPicker(document.getElementById("scene-picker"), values, true);
+  renderChannelPicker(document.getElementById("scene-picker"), values);
 });
 
 document.getElementById("scene-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const form = e.target;
-  const steps = [];
-  document.querySelectorAll("#scene-picker .picker-row").forEach((row) => {
-    const box = row.querySelector(".pick-uid");
-    if (!box.checked) return;
-    steps.push({
-      uid: box.dataset.uid,
-      value: parseInt(row.querySelector(".pick-value").value, 10) || 0,
-    });
-  });
+  const steps = Object.keys(scenePicked).map((uid) => ({ uid: uid, value: scenePicked[uid] }));
   const payload = { name: form.name.value, description: form.description.value, steps: steps };
   if (editingSceneId) await api("/api/scenes/" + editingSceneId, "PUT", payload);
   else await api("/api/scenes", "POST", payload);
@@ -1959,9 +2069,9 @@ function redrawGroups() {
       api("/api/groups/" + group.id + "/apply", "POST", { role: role, value: value });
 
     if (group.card === "ez") {
-      Object.keys(group.roles || {}).forEach((role) => {
-        card.appendChild(groupFader(role, (group.roles[role] || []).length, (v) => send(role, v)));
-      });
+      // The same widgets the fixtures use, pointed at sets of channels instead
+      // of single ones. A group of PARs gets a colour wheel, not six faders.
+      ezWidgets(groupTarget(group)).forEach((part) => card.appendChild(part));
     } else {
       card.appendChild(groupFader("All", (group.members || []).length, (v) => send("", v)));
       const list = (group.members || []).map(groupChannelName).join(", ");
@@ -2019,126 +2129,214 @@ document.getElementById("choice-group-ez").addEventListener("click", () => {
   openGroupModal(null, "ez");
 });
 
-let editingGroupId = null;
-let editingGroupCard = "lite";
+// ---- group creation, one step at a time ----
+//
+// A lite group is a single page of tick boxes. An EZ group is a short wizard:
+// pick the control type, then one page per role, each listing every channel on
+// the board with a search box over it. One long page holding six roles and a
+// hundred and fifty checkboxes is unusable on a laptop and worse on a phone.
+
+let groupWizard = null;
 
 function openGroupModal(group, card) {
-  const form = document.getElementById("group-form");
-  editingGroupId = group ? group.id : null;
-  editingGroupCard = card || "lite";
-  form.name.value = group ? group.name : "";
-
-  const kindField = document.getElementById("group-kind-field");
-  kindField.hidden = editingGroupCard !== "ez";
-  if (editingGroupCard === "ez") {
-    const select = document.getElementById("group-kind");
-    select.innerHTML = "";
-    Object.keys(EZ_KINDS).forEach((key) =>
-      select.appendChild(el("option", { value: key }, [EZ_KINDS[key].label]))
-    );
-    select.value = (group && group.kind) || "rgb";
-  }
-
-  renderGroupPicker(group);
-  document.getElementById("group-title").textContent = group ? "Edit group" : "New group";
-  document.getElementById("group-submit").textContent = group ? "Save changes" : "Create group";
+  groupWizard = {
+    editingId: group ? group.id : null,
+    card: card || (group && group.card) || "lite",
+    name: group ? group.name : "",
+    kind: (group && group.kind) || "rgb",
+    members: ((group && group.members) || []).slice(),
+    roles: JSON.parse(JSON.stringify((group && group.roles) || {})),
+    step: 0,
+    search: "",
+  };
   document.getElementById("group-error").hidden = true;
   document.getElementById("group-modal").hidden = false;
-  form.name.focus();
+  renderGroupStep();
 }
 
-document.getElementById("group-kind").addEventListener("change", () => renderGroupPicker(null));
+// The pages after the first, one per role of the chosen kind.
+function wizardRoles() {
+  if (groupWizard.card !== "ez") return [];
+  return EZ_KINDS[groupWizard.kind].roles;
+}
 
-function renderGroupPicker(group) {
-  const box = document.getElementById("group-picker");
-  const title = document.getElementById("group-picker-title");
+function renderGroupStep() {
+  const w = groupWizard;
+  const box = document.getElementById("group-step");
+  const progress = document.getElementById("group-progress");
+  const submit = document.getElementById("group-submit");
+  const back = document.getElementById("group-back");
   box.innerHTML = "";
+  document.getElementById("group-error").hidden = true;
 
-  if (editingGroupCard !== "ez") {
-    title.textContent = "Channels driven together";
-    const values = {};
-    ((group && group.members) || []).forEach((uid) => (values[uid] = 0));
-    renderChannelPicker(box, values, false);
+  const roles = wizardRoles();
+  const lastStep = w.card === "ez" ? roles.length : 0;
+  back.hidden = w.step === 0;
+  submit.textContent = w.step === lastStep ? (w.editingId ? "Save changes" : "Create group") : "Next";
+  document.getElementById("group-title").textContent = w.editingId ? "Edit group" : "New group";
+
+  if (w.step === 0) {
+    progress.textContent = w.card === "ez" ? "Step 1 of " + (roles.length + 1) : "";
+    const nameField = el("div", { class: "field" }, [el("label", { for: "group-name" }, ["Name"])]);
+    const name = el("input", { type: "text", id: "group-name", value: w.name });
+    name.addEventListener("input", () => (w.name = name.value));
+    nameField.appendChild(name);
+    box.appendChild(nameField);
+
+    if (w.card === "ez") {
+      const kindField = el("div", { class: "field" }, [
+        el("label", { for: "group-kind" }, ["Control type"]),
+      ]);
+      const select = el("select", { id: "group-kind" });
+      Object.keys(EZ_KINDS).forEach((key) =>
+        select.appendChild(el("option", { value: key }, [EZ_KINDS[key].label]))
+      );
+      select.value = w.kind;
+      select.addEventListener("change", () => {
+        w.kind = select.value;
+        // Roles from the previous kind mean nothing under the new one.
+        w.roles = {};
+      });
+      kindField.appendChild(select);
+      box.appendChild(kindField);
+    } else {
+      box.appendChild(
+        el("p", { class: "hint" }, [
+          "One fader writing the same value to every channel you tick.",
+        ])
+      );
+      box.appendChild(channelPicker(w.members, (list) => (w.members = list), true));
+    }
     return;
   }
 
-  // One picker per role: a role takes a set of channels, which is what lets one
-  // wheel drive the reds of a whole bar.
-  const kind = document.getElementById("group-kind").value;
-  title.textContent = "Channels for each role";
-  EZ_KINDS[kind].roles.forEach((role) => {
-    const section = el("div", { class: "picker-block" });
-    section.appendChild(
-      el("h3", {}, [role.label, role.required ? "" : el("span", { class: "hint" }, ["optional"])])
-    );
-    const chosen = ((group && group.roles && group.roles[role.key]) || []).slice();
-    devicesCache.forEach((device) => {
-      device.channels.forEach((channel) => {
-        const row = el("div", { class: "picker-row" });
-        const cb = el("input", {
-          type: "checkbox",
-          class: "pick-role",
-          "data-role": role.key,
-          "data-uid": channel.uid,
-        });
-        cb.checked = chosen.indexOf(channel.uid) !== -1;
-        row.appendChild(cb);
-        row.appendChild(el("span", { class: "grow" }, [device.name + " / " + channel.name]));
-        section.appendChild(row);
-      });
-    });
-    box.appendChild(section);
-  });
+  const role = roles[w.step - 1];
+  progress.textContent = "Step " + (w.step + 1) + " of " + (roles.length + 1);
+  box.appendChild(
+    el("h3", {}, [
+      role.label,
+      el("span", { class: "hint" }, [role.required ? "required" : "optional, skip if unused"]),
+    ])
+  );
+  box.appendChild(
+    el("p", { class: "hint" }, [
+      "Every channel picked here moves together when this role does.",
+    ])
+  );
+  const chosen = w.roles[role.key] || [];
+  box.appendChild(channelPicker(chosen, (list) => (w.roles[role.key] = list), true));
 }
+
+// A searchable list of every channel on the board, grouped by fixture.
+function channelPicker(selected, onChange, withSearch) {
+  const wrap = el("div", {});
+  const chosen = new Set(selected);
+  const list = el("div", { class: "picker-scroll" });
+
+  const draw = (term) => {
+    list.innerHTML = "";
+    let shown = 0;
+    devicesCache.forEach((device) => {
+      const matches = device.channels.filter((channel) => {
+        if (!term) return true;
+        return (device.name + " " + channel.name).toLowerCase().indexOf(term) !== -1;
+      });
+      if (matches.length === 0) return;
+      const block = el("div", { class: "picker-block" });
+      block.appendChild(el("h3", {}, [device.name]));
+      matches.forEach((channel) => {
+        shown++;
+        const row = el("div", { class: "picker-row" });
+        const cb = el("input", { type: "checkbox" });
+        cb.checked = chosen.has(channel.uid);
+        cb.addEventListener("change", () => {
+          if (cb.checked) chosen.add(channel.uid);
+          else chosen.delete(channel.uid);
+          onChange(Array.from(chosen));
+        });
+        row.appendChild(cb);
+        row.appendChild(el("span", { class: "grow" }, [channel.name]));
+        block.appendChild(row);
+      });
+      list.appendChild(block);
+    });
+    if (shown === 0) list.appendChild(el("p", { class: "hint" }, ["Nothing matches."]));
+  };
+
+  if (withSearch) {
+    const search = el("input", { type: "search", placeholder: "Filter by fixture or channel" });
+    search.addEventListener("input", () => draw(search.value.trim().toLowerCase()));
+    wrap.appendChild(search);
+  }
+  wrap.appendChild(list);
+  draw("");
+  onChange(Array.from(chosen));
+  return wrap;
+}
+
+document.getElementById("group-back").addEventListener("click", () => {
+  if (groupWizard.step > 0) groupWizard.step--;
+  renderGroupStep();
+});
 
 document.getElementById("group-form").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const form = e.target;
+  const w = groupWizard;
   const errorBox = document.getElementById("group-error");
-  const payload = { name: form.name.value, card: editingGroupCard };
+  const roles = wizardRoles();
+  const lastStep = w.card === "ez" ? roles.length : 0;
 
-  if (editingGroupCard === "ez") {
-    payload.kind = document.getElementById("group-kind").value;
-    const roles = {};
-    document.querySelectorAll("#group-picker .pick-role").forEach((cb) => {
-      if (!cb.checked) return;
-      (roles[cb.dataset.role] = roles[cb.dataset.role] || []).push(cb.dataset.uid);
-    });
-    const required = EZ_KINDS[payload.kind].roles.filter((r) => r.required).map((r) => r.key);
-    const empty = required.filter((key) => !roles[key]);
-    if (empty.length) {
-      errorBox.textContent = "These roles need at least one channel: " + empty.join(", ") + ".";
+  if (w.step === 0 && !w.name.trim()) {
+    errorBox.textContent = "The group needs a name.";
+    errorBox.hidden = false;
+    return;
+  }
+  if (w.step > 0) {
+    const role = roles[w.step - 1];
+    if (role.required && !(w.roles[role.key] || []).length) {
+      errorBox.textContent = role.label + " needs at least one channel.";
       errorBox.hidden = false;
       return;
     }
-    payload.roles = roles;
-  } else {
-    const members = [];
-    document.querySelectorAll("#group-picker .pick-uid").forEach((cb) => {
-      if (cb.checked) members.push(cb.dataset.uid);
+  }
+
+  if (w.step < lastStep) {
+    w.step++;
+    renderGroupStep();
+    return;
+  }
+
+  const payload = { name: w.name, card: w.card };
+  if (w.card === "ez") {
+    payload.kind = w.kind;
+    const roleMap = {};
+    Object.keys(w.roles).forEach((key) => {
+      if ((w.roles[key] || []).length) roleMap[key] = w.roles[key];
     });
-    if (members.length === 0) {
+    payload.roles = roleMap;
+  } else {
+    if (!w.members.length) {
       errorBox.textContent = "Pick at least one channel.";
       errorBox.hidden = false;
       return;
     }
-    payload.members = members;
+    payload.members = w.members;
   }
 
-  errorBox.hidden = true;
-  if (editingGroupId) await api("/api/groups/" + editingGroupId, "PUT", payload);
+  if (w.editingId) await api("/api/groups/" + w.editingId, "PUT", payload);
   else await api("/api/groups", "POST", payload);
   document.getElementById("group-modal").hidden = true;
-  editingGroupId = null;
+  groupWizard = null;
   renderGroups();
 });
 
 document.querySelectorAll("#group-modal [data-close-group]").forEach((node) => {
   node.addEventListener("click", () => {
     document.getElementById("group-modal").hidden = true;
-    editingGroupId = null;
+    groupWizard = null;
   });
 });
+
 
 // ---- settings ----
 

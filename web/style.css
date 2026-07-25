@@ -628,3 +628,12 @@ button.danger:hover { background: #b91c1c; border-color: #b91c1c; }
   padding: 0.2rem 0;
 }
 .picker-row .pick-value { width: 4.5rem; }
+
+/* A picker holding every channel on the board needs its own scroll, otherwise
+   the dialog grows past the window and the buttons go with it. */
+.picker-scroll {
+  max-height: 15rem;
+  overflow-y: auto;
+  margin-top: 0.5rem;
+  padding-right: 0.3rem;
+}

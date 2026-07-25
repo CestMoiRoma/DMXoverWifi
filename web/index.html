@@ -551,22 +551,13 @@
       </button>
     </div>
     <form id="group-form" class="form-stacked">
-      <div class="field">
-        <label for="group-name">Name</label>
-        <input type="text" id="group-name" name="name" required>
-      </div>
-      <div class="field" id="group-kind-field" hidden>
-        <label for="group-kind">Control type</label>
-        <select id="group-kind" name="kind"></select>
-      </div>
-      <div class="channels-block">
-        <div class="channels-block-header"><span id="group-picker-title">Channels</span></div>
-        <div id="group-picker"></div>
-      </div>
+      <p id="group-progress" class="hint"></p>
+      <div id="group-step"></div>
       <p id="group-error" class="form-error" hidden></p>
       <div class="form-actions">
         <button type="button" class="secondary" data-close-group>Cancel</button>
-        <button type="submit" id="group-submit">Create group</button>
+        <button type="button" id="group-back" class="secondary" hidden>Back</button>
+        <button type="submit" id="group-submit">Next</button>
       </div>
     </form>
   </div>
