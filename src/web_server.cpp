@@ -45,79 +45,6 @@ bool DmxWebServer::serveFile(const char* path, const char* contentType) {
   return true;
 }
 
-// ---- the page, as a single response ----
-//
-// A browser loading the UI used to open a connection for the page and then two
-// more, in a burst, for the stylesheet and the script. This board answers one
-// client at a time, and a subresource that loses that race takes the styling of
-// the whole UI with it. Splicing the two files into the page at send time means
-// there is nothing left to race: one request, one connection, one response.
-//
-// The routes for /style.css and /app.js stay, since fetching them directly is
-// useful for debugging, but nothing the UI does needs them.
-
-// Chunks are flushed on a buffer rather than per line: a 16 KB page is some 400
-// lines, and 400 chunk headers and TCP writes cost far more than the copying.
-static const size_t CHUNK_THRESHOLD = 1400;
-
-void DmxWebServer::serveIndex() {
-  File page = LittleFS.open("/www/index.html", "r");
-  if (!page) {
-    _server.send(404, "text/plain", "not found");
-    return;
-  }
-
-  _server.sendHeader("Cache-Control", "no-store");
-  _server.setContentLength(CONTENT_LENGTH_UNKNOWN);  // chunked; nothing is buffered whole
-  _server.send(200, "text/html", "");
-
-  String buf;
-  buf.reserve(CHUNK_THRESHOLD + 256);
-
-  auto flush = [&](bool force) {
-    if (buf.length() >= CHUNK_THRESHOLD || (force && buf.length())) {
-      _server.sendContent(buf);
-      buf = "";
-    }
-  };
-
-  // Block reads, not byte reads: pulling 45 KB of assets one character at a
-  // time costs a LittleFS call per byte and turned a page load into seconds.
-  auto splice = [&](const char* path) {
-    File asset = LittleFS.open(path, "r");
-    if (!asset) return;
-    char block[256];
-    while (asset.available()) {
-      int read = asset.readBytes(block, sizeof(block));
-      if (read <= 0) break;
-      buf.concat(block, read);
-      flush(false);
-    }
-    asset.close();
-  };
-
-  while (page.available()) {
-    String line = page.readStringUntil('\n');
-    if (line.indexOf("href=\"/style.css\"") >= 0) {
-      buf += "<style>\n";
-      splice("/www/style.css");
-      buf += "\n</style>\n";
-    } else if (line.indexOf("src=\"/app.js\"") >= 0) {
-      buf += "<script>\n";
-      splice("/www/app.js");
-      buf += "\n</script>\n";
-    } else {
-      buf += line;
-      buf += "\n";
-    }
-    flush(false);
-  }
-  page.close();
-
-  flush(true);
-  _server.sendContent("");  // terminates the chunked body
-}
-
 // ---- access control ----
 //
 // The served UI is trusted, everything else needs the API key and the HTTP API
@@ -174,10 +101,12 @@ void DmxWebServer::begin() {
 
 void DmxWebServer::registerRoutes() {
 #if WITH_WEBUI
-  _server.on("/", HTTP_GET, [this]() { serveIndex(); });
-  _server.on("/index.html", HTTP_GET, [this]() { serveIndex(); });
-  _server.on("/app.js", HTTP_GET, [this]() { serveFile("/www/app.js", "application/javascript"); });
-  _server.on("/style.css", HTTP_GET, [this]() { serveFile("/www/style.css", "text/css"); });
+  // One file for the whole UI: tools/pack_web.py splices the stylesheet and the
+  // script into it at build time. The board answers one client at a time, and a
+  // subresource that lost that race took the styling of the whole page with it,
+  // so there is deliberately no separate asset left to request.
+  _server.on("/", HTTP_GET, [this]() { serveFile("/www/index.html", "text/html"); });
+  _server.on("/index.html", HTTP_GET, [this]() { serveFile("/www/index.html", "text/html"); });
   _server.on("/wiki.md", HTTP_GET, [this]() { serveFile("/www/wiki.md", "text/plain"); });
   // Browsers ask for this unprompted. Answering 204 costs one short response
   // instead of routing it through the 404 handler and its JSON body.

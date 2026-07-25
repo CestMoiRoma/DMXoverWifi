@@ -645,18 +645,17 @@ for example `pio run -e s2mini`, rather than mixing artifacts.
 
 **The web UI is blank or 404s, but the API works**
 The assets were not flashed. Run `pio run -e <env> -t uploadfs` to write the
-`fsdata/www/` LittleFS image. A firmware upload alone does not include them.
+LittleFS image. A firmware upload alone does not include it.
 
 **The page loads unstyled, and the stylesheet request shows a connection reset**
-It should no longer be possible: `/` is sent as one chunked response with
-`style.css` and `app.js` spliced in where their tags sit, so the UI arrives over
-a single connection and there is no separate request left to lose. The board
-answers one client at a time, and a subresource that lost that race used to take
-the styling of the whole page with it.
+It should no longer be possible. The UI ships as **one** file: `tools/pack_web.py`
+splices `web/style.css` and `web/app.js` into `web/index.html` at build time and
+writes the result to the image, so a page load is a single request with nothing
+left to race. The board answers one HTTP client at a time, and a subresource
+that lost that race used to take the styling of the whole page with it.
 
-The `/style.css` and `/app.js` routes still exist for fetching either file
-directly while debugging, but nothing the UI does depends on them. Edit the
-files as before; the splice happens at send time, not at build time.
+`/style.css` and `/app.js` therefore return `404`: those files are not on the
+board at all. Edit them in `web/` as usual and rebuild.
 
 **Serial port opens but nothing answers**
 The console is silent by design: it prints no banner, no prompt and no boot log,

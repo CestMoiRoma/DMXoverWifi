@@ -13,8 +13,10 @@
 # Local config backup exported from the board (may hold wifi/mqtt secrets)
 .env
 
-# Board config generated from .env by tools/env_to_fsdata.py, same secrets
-fsdata/data/
+# The whole LittleFS image is build output: tools/pack_web.py writes www/ from
+# web/, tools/env_to_fsdata.py writes data/ from .env. The latter carries the
+# same WiFi and MQTT passwords as .env itself.
+fsdata/
 
 # OS / filesystem cruft
 .DS_Store

@@ -137,6 +137,12 @@ pio run -e s2mini -t upload
 pio run -e s2mini -t uploadfs
 ```
 
+The web UI ships as a **single file**. `tools/pack_web.py` splices `web/style.css`
+and `web/app.js` into `web/index.html` before the image is packed, so loading the
+page is one request. The board answers one HTTP client at a time, and a
+stylesheet that lost that race took the styling of the whole UI with it. Edit the
+three files in `web/` normally; the packing happens at build time.
+
 `uploadfs` builds the LittleFS image and writes it whole, so it **erases
 everything the board had stored**, config included. A plain `upload` leaves the
 filesystem alone, so re-run `uploadfs` only when the web assets change or when
@@ -367,13 +373,17 @@ src/
   serial_console.{h,cpp} USB/UART serial command interpreter
   settings_store.{h,cpp} JSON config files on LittleFS, with defaults
 
-fsdata/
-  www/                  The web UI (HTML/CSS/JS) plus a copy of the wiki,
-                        flashed to LittleFS with `uploadfs`
-  data/                 Board config generated from `.env` at build time,
-                        gitignored because it carries passwords
+web/                    The web UI as you edit it
+  index.html
+  style.css
+  app.js
+
+fsdata/                 Build output, gitignored in full. This is the LittleFS
+                        image: www/index.html with the CSS and JS packed in,
+                        a copy of the wiki, and data/*.json from `.env`
 
 tools/
+  pack_web.py           Pre-build script: web/ into one self-contained page
   env_to_fsdata.py      Pre-build script: `.env` to `fsdata/data/*.json`
   dmx_desktop.py        Tkinter control surface driving the board over USB
 

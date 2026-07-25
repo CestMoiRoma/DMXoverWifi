@@ -41,8 +41,11 @@ Match the code around you.
   them.
 - Prefer static buffers over churning `String` in hot paths, to avoid heap
   fragmentation over long runs.
-- The web UI in `fsdata/www/` is plain HTML, CSS and JS with no build step. If you
-  change it, keep it framework-free.
+- The web UI in `web/` is plain HTML, CSS and JS with no framework and no
+  transpiling. `tools/pack_web.py` splices the three files into one page at
+  build time, which is packing rather than building: what you write is what
+  ships. Keep it that way, and keep `fsdata/` out of your edits, since it is
+  generated in full.
 
 ## Licensing
 
