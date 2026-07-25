@@ -4,40 +4,45 @@ Contributions are welcome. The workflow is the usual GitHub one.
 
 1. Fork the repository.
 2. Create a branch for your change.
-3. Run the test suite (see below). It must be green.
+3. Make sure it builds for both board families (see below).
 4. Open a pull request against `main`, describing what changed and why.
 
 Issues and bug reports are just as useful as code, especially if you are running
-this on a board other than the Lolin S2 Mini.
+this on a board other than the Lolin S2 Mini or the Wemos D1 mini.
 
-## Running the tests
+## Building
 
-Everything runs off the board. `test/` contains fake CircuitPython modules that
-stand in for the ESP32 hardware, so the firmware can be imported and exercised on
-a normal PC.
-
-```bash
-docker compose -f test/docker-compose.yml run --rm tests
-```
-
-Or without Docker, if you have Python 3.11 or newer:
+The firmware builds with [PlatformIO](https://platformio.org/). Before opening a
+pull request, confirm it still compiles for the ESP32 and the ESP8266, since one
+codebase serves both:
 
 ```bash
-pip install -r test/requirements.txt
-python -m pytest test -v
+pio run -e s2mini
+pio run -e d1mini
 ```
 
-See [WIKI.md](WIKI.md#test-suite) for what the suite covers and how the fake
-hardware layer works.
+Flash and try it on real hardware where you can. There is no automated test suite
+in this rewrite yet; the CircuitPython line had one, and restoring a
+host-compilable equivalent is on the [roadmap](README.md#reliability-and-operations).
+Until then, changes are validated by building both targets and testing on the
+board.
 
 ## Style
 
-Match the code around you. The firmware targets CircuitPython, so keep to what it
-supports: no f-strings in `src/`, no `typing` imports, no dependencies beyond what
-is already vendored in `lib/`.
+Match the code around you.
 
-Tooling under `tools/` and `test/` runs on a normal desktop Python and is free to
-use the full standard library.
+- Keep board-specific code behind the existing abstractions. The DMX transmit
+  path lives in `src/dmx/`, split into a common driver and one backend per board;
+  WiFi, the web server and MQTT wrap the per-core Arduino APIs. Anything that
+  differs between the ESP32 and the ESP8266 belongs behind one of these seams, not
+  scattered through `#if defined(ESP8266)` across the codebase.
+- Use `ArduinoJson` for config and API payloads, and keep the on-disk JSON shapes
+  stable, since the web UI, the MQTT bridge and the `.env` export all depend on
+  them.
+- Prefer static buffers over churning `String` in hot paths, to avoid heap
+  fragmentation over long runs.
+- The web UI in `fsdata/www/` is plain HTML, CSS and JS with no build step. If you
+  change it, keep it framework-free.
 
 ## Licensing
 

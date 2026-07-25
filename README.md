@@ -1,19 +1,20 @@
 # DMX over WiFi (Mark II)
 
-[![tests](https://github.com/CestMoiRoma/DMXoverWifi/actions/workflows/tests.yml/badge.svg)](https://github.com/CestMoiRoma/DMXoverWifi/actions/workflows/tests.yml)
 [![license: PolyForm Noncommercial](https://img.shields.io/badge/license-PolyForm%20Noncommercial-blue)](LICENSE)
 
 A standalone DMX512 transmitter you configure and drive from a web browser. It
-runs CircuitPython on an ESP32 board, serves its own web UI, remembers several
-WiFi networks, falls back to its own hotspot when none are in range, and can
-expose every DMX channel to Home Assistant over MQTT.
+runs on an ESP32 or ESP8266 board, serves its own web UI, remembers several WiFi
+networks, falls back to its own hotspot when none are in range, and can expose
+every DMX channel to Home Assistant over MQTT.
 
 > [!NOTE]
-> **This is a full rewrite of my earlier [ESPDMX](https://github.com/CestMoiRoma/ESPDMX)
-> project**, the "MKII" that was on that project's roadmap. None of the old
-> Arduino and ESP8266 firmware is reused. The WebSocket-only control scheme is
-> gone, replaced by a web UI, a REST API, an MQTT bridge and a serial console.
-> Only the electrical design carries over.
+> **This is the C++ / PlatformIO rewrite of the Mark II.** The Mark II firmware
+> was previously written in CircuitPython; it has been ported to C++ on the
+> Arduino framework so it runs natively, uses far less RAM, keeps steadier DMX
+> timing, and now builds for the **ESP8266** as well as the ESP32. The web UI,
+> the REST API, the MQTT bridge and the serial console all carry over unchanged
+> in behaviour. The original [ESPDMX](https://github.com/CestMoiRoma/ESPDMX) was
+> an Arduino/ESP8266 WebSocket controller; this project is its successor.
 
 ## Contents
 
@@ -21,10 +22,10 @@ expose every DMX channel to Home Assistant over MQTT.
 - [Hardware](#hardware)
 - [Wiring](#wiring)
 - [Getting started](#getting-started)
+- [Build environments](#build-environments)
 - [The web UI](#the-web-ui)
 - [Channel types](#channel-types)
 - [Timing and latency](#timing-and-latency)
-- [Testing](#testing)
 - [Repository layout](#repository-layout)
 - [Documentation](#documentation)
 - [Roadmap](#roadmap)
@@ -35,6 +36,7 @@ expose every DMX channel to Home Assistant over MQTT.
 | | |
 |---|---|
 | **DMX output** | A full 512-channel universe, refreshed roughly 40 times a second, generated over UART with a proper break and mark-after-break |
+| **Two board families** | One codebase builds for the ESP32-S2 (primary) and the ESP8266, with the board-specific DMX transmit path behind a small hardware abstraction layer |
 | **Web UI** | Four pages served straight off the board: live control, fixture editor, settings, and an info page |
 | **Fixtures and channels** | Group DMX addresses into named fixtures. Each channel is a fader or one of three kinds of button |
 | **Multi-network WiFi** | Save several networks with priorities, so the same box works at home, at the venue and on tour |
@@ -42,14 +44,14 @@ expose every DMX channel to Home Assistant over MQTT.
 | **Static or DHCP** | Take whatever address the router hands out, or pin a fixed one |
 | **MQTT and Home Assistant** | Optional. Publishes auto-discovery configs, so every channel turns up as a `number`, `switch` or `button` entity |
 | **Serial console** | A full text command set over USB. Configure, inspect and reboot the board without a browser |
-| **Off-board test suite** | 320 tests that run the firmware on a PC against a fake ESP32, so a change can be checked before it is flashed |
+| **Headless option** | A build flag drops the served UI while keeping the REST API, MQTT, WiFi and DMX, to save flash and RAM on the ESP8266 |
 | **Parent and child mesh** | Present in the UI and the settings store. **Work in progress: stored only, no radio behaviour yet** |
 
 ## Hardware
 
-- **An ESP32-family board that runs CircuitPython.** Developed and tested on a
-  **Wemos / Lolin S2 Mini** (ESP32-S2, CircuitPython board id `lolin_s2_mini`,
-  4 MB flash and 2 MB PSRAM).
+- **An ESP32 or ESP8266 board.** Developed and tested on a **Wemos / Lolin S2
+  Mini** (ESP32-S2, 4 MB flash, 2 MB PSRAM). Also builds for the **Wemos D1
+  mini** (ESP8266); see [Build environments](#build-environments).
 - **A MAX485 or similar RS-485 breakout**, the common blue module with
   `RO DI DE RE` down one side and `VCC A B GND` down the other.
 - **A 3-pin or 5-pin female XLR** for the DMX output.
@@ -58,23 +60,27 @@ expose every DMX channel to Home Assistant over MQTT.
 Output only for now. `RO` stays unconnected, so there is no DMX input and no RDM.
 Changing that is the first item on the [roadmap](#roadmap).
 
+> [!NOTE]
+> **ESP32 vs ESP8266.** On the ESP32 the DMX data pin is a configurable GPIO
+> (`IO4` by default). On the ESP8266 the DMX output is fixed to `Serial1`
+> (UART1 TX = **GPIO2**), so the tx-pin setting is only a label there. The
+> ESP8266 is single-core and shares its CPU with the WiFi stack, which can add
+> jitter to the DMX frame under network load; the ESP32 is the safer target for
+> timing-sensitive rigs.
+
 ## Wiring
 
 ![MAX485 wiring for a DMX output](docs/images/wiring-espdmx.png)
 
-> [!IMPORTANT]
-> **The board in this picture is a Wemos D1 Mini, which is an ESP8266.** It comes
-> from the original ESPDMX project and is kept here because the RS-485 side of
-> the circuit is identical. **This repository does not run on an ESP8266.** It
-> needs an ESP32 board running CircuitPython, as listed under
-> [Hardware](#hardware). Wire the MAX485 exactly as shown, but take the signals
-> from your ESP32's pins and set the matching pin names in the UI or over serial.
+The picture is a Wemos D1 mini (ESP8266). The RS-485 side of the circuit is the
+same on any board; take the DMX data signal from your board's TX pin (`IO4` on
+the ESP32, `GPIO2` on the ESP8266) and wire the MAX485 as shown.
 
 ### Connections
 
 | Microcontroller | MAX485 | Notes |
 |---|---|---|
-| `D4` (configurable) | `DI` | The DMX data line. This is the **DMX TX pin** setting, `D4` by default |
+| DMX TX pin | `DI` | The DMX data line. `IO4` on the ESP32 (configurable), `GPIO2` on the ESP8266 (fixed) |
 | `5V` | `VCC` | |
 | `GND` | `GND` | |
 | not wired | `DE` + `RE` | Tied together **to VCC** in this schematic, so the transceiver always transmits |
@@ -96,70 +102,43 @@ If your wiring routes `DE` and `RE` to a GPIO instead, enable the direction pin
 and name it:
 
 - in the UI, under **Settings**, **System**, **Enable DE/RE direction pin**
-- over serial, with `Set-System dir-pin enable=true pin=D3`
+- over serial, with `Set-System dir-pin enable=true pin=IO18`
 
 Either way, reboot the board for a pin change to take effect.
 
 ## Getting started
 
-### 1. Flash CircuitPython
+### 1. Install PlatformIO
 
-Install CircuitPython on your ESP32 board. On the Lolin S2 Mini: hold `0`, tap
-`RST`, then drop the `.uf2` on the bootloader drive that appears. The board then
-shows up as a `CIRCUITPY` mass-storage volume.
+The firmware builds with [PlatformIO](https://platformio.org/). Install the CLI
+(`pip install platformio`) or the VS Code extension. PlatformIO downloads the
+board toolchains and the libraries (`ArduinoJson`, `PubSubClient`) on the first
+build; nothing else needs installing by hand.
 
 ### 2. Get the code
 
 ```bash
 git clone https://github.com/CestMoiRoma/DMXoverWifi.git
 cd DMXoverWifi
-pip install pyserial
 ```
 
-Python 3 and pyserial are all the tooling needs. There is no build step.
+### 3. Flash the firmware and the web assets
 
-### 3. Optional: preload your settings
-
-Copy `.env.example` to `.env` and fill in whatever you want the board to start
-with: WiFi networks, MQTT broker, DMX pins, even a first set of fixtures. The
-deploy script seeds them onto the board so a fresh flash is already configured.
-`.env` is gitignored, because it holds passwords in clear text.
-
-Skip this and set everything up through the UI instead. An already-configured
-board can also hand its settings back with **Export .env** on the Settings page,
-which makes cloning a working box a two-step job.
-
-[The .env file](WIKI.md#the-env-file) documents every key, its default and what
-a deploy does with it.
-
-### 4. Deploy
+Pick the environment for your board (see [Build environments](#build-environments))
+and flash. The firmware and the web UI are two separate uploads: the firmware,
+and a LittleFS image built from `fsdata/`.
 
 ```bash
-python tools/deploy.py
+# ESP32-S2 (Wemos/Lolin S2 Mini)
+pio run -e s2mini -t upload
+pio run -e s2mini -t uploadfs
 ```
 
-It asks where the `CIRCUITPY` drive is mounted, then copies `boot.py`, `code.py`,
-`src/`, `www/` and the vendored `lib/` across. Your saved config under `data/` is
-left alone.
+`uploadfs` writes the `fsdata/www/` assets to the board's LittleFS. Re-run it
+only when the UI changes; day-to-day config lives elsewhere and survives a plain
+firmware upload.
 
-Answer nothing by passing it all up front, which is the form to keep once you
-know your drive letter and port:
-
-```bash
-python tools/deploy.py E:/ --port COM9 --force
-```
-
-`--force` reseeds `data/*.json` from `.env` on every deploy. Read
-[what a deploy does with it](WIKI.md#what-a-deploy-does-with-it) before making
-that a habit, because `--force` also resets keys your `.env` never mentions.
-
-Once the firmware has run at least once, the board owns the filesystem and the
-drive is read-only from the PC. The script handles that by itself: it asks which
-serial port the board is on, ejects the drive, reboots the board into config
-mode, copies the files, then reboots it back to normal. See
-[WIKI.md](WIKI.md#filesystem-write-access) for what that does and why.
-
-### 5. Get it on the network
+### 4. Get it on the network
 
 With no saved network, the board starts its own hotspot:
 
@@ -179,12 +158,31 @@ The serial console does the same thing in one line:
 Add-Wifi ssid="My Network" passwd="hunter2" priority=10
 ```
 
-### 6. Add a fixture
+### 5. Add a fixture
 
 Open **Device Manager**, give the fixture a name and a DMX start channel, then
 add its channels. A channel's *offset* is relative to the start channel, so a
 fixture starting at 10 with a channel at offset 3 drives DMX address 12. Its
 controls then appear on **Home**.
+
+## Build environments
+
+`platformio.ini` defines four environments:
+
+| Environment | Board | Web UI | Use |
+|---|---|---|---|
+| `s2mini` | ESP32-S2 | yes | Primary target |
+| `s2mini_headless` | ESP32-S2 | no | REST API + MQTT + DMX only |
+| `d1mini` | ESP8266 | yes | Range extension |
+| `d1mini_headless` | ESP8266 | no | Tightest RAM/flash footprint |
+
+The `_headless` builds set `-D WITH_WEBUI=0`: they stop serving the HTML/JS/CSS
+pages (and no longer need the `uploadfs` step) but keep the REST API, MQTT, WiFi
+and DMX, so the box stays controllable over HTTP and MQTT. That trade is most
+useful on the ESP8266, where RAM is tight.
+
+Flash a specific environment with `pio run -e <name> -t upload`. The default
+environment is `s2mini`.
 
 ## The web UI
 
@@ -206,21 +204,16 @@ Create, inspect and delete fixtures. Channels take an offset, a name and a type.
 Saved networks with priorities and a scanner, the full MQTT and Home Assistant
 configuration, DMX pin assignments, hotspot credentials, static IP settings, and
 the work-in-progress parent and child section. **Export .env** hands the whole
-live config back as a file you can deploy onto another board.
+live config back as a readable file you can keep as a backup.
 
 ![Settings page](docs/images/ui-settings.png)
 
 ### Info
 
 Firmware version, author, repository, and the serial console reference. The wiki
-link works offline too, because the deploy script drops a copy of `WIKI.md` on
-the board.
+link works offline too, because a copy of `WIKI.md` ships in the LittleFS image.
 
 ![Info page](docs/images/ui-info.png)
-
-> Screenshots come from the test suite's mock board, so they show demo fixtures
-> rather than anyone's real rig. Regenerate them with
-> `docker compose -f test/docker-compose.yml run --rm screenshots`.
 
 ## Channel types
 
@@ -255,14 +248,17 @@ Where the jitter comes from:
 - **WiFi is best effort.** Retries, interference, a busy access point or a
   roaming client each add tens to hundreds of milliseconds, unpredictably. Put a
   broker and Home Assistant on top and the tail gets longer.
-- **One cooperative loop.** `code.py` polls the HTTP server, the MQTT client, the
-  DMX refresh and the serial console in a single `while True`. Nothing preempts
-  anything, so a slow request delays the next DMX frame.
-- **CircuitPython is interpreted**, with a garbage collector that can pause the
-  loop at any moment.
-- **The DMX frame itself is software timed.** The break is generated by
-  reconfiguring the UART, and the 25 ms refresh happens whenever the loop next
-  comes round and enough time has passed, rather than on a timer interrupt.
+- **One cooperative loop.** `loop()` polls the HTTP server, the MQTT client, the
+  DMX refresh and the serial console in turn. Nothing preempts anything, so a
+  slow request delays the next DMX frame. On the ESP8266 the single core is
+  shared with the WiFi stack as well, which widens the tail.
+- **The DMX frame is software timed.** The 25 ms refresh happens whenever the
+  loop next comes round and enough time has passed, rather than on a timer
+  interrupt.
+
+Compared with the previous CircuitPython firmware, the native C++ build removes
+the interpreter and its garbage-collector pauses, so the DMX frame is steadier
+and the loop runs far tighter. It does not make WiFi arrival deterministic.
 
 What is dependable: once a value reaches the DMX buffer it keeps going out at
 roughly 40 frames a second, so fixtures hold their state and do not flicker. It
@@ -271,86 +267,55 @@ is the *arrival* of a new value that has no deadline.
 If you need deterministic timing, drive your rig from a real lighting desk or an
 Art-Net or sACN node on a wired network.
 
-## Testing
-
-The firmware runs on a PC, against a fake ESP32, so nothing needs flashing to be
-checked.
-
-```bash
-docker compose -f test/docker-compose.yml run --rm tests
-```
-
-That covers config persistence, DMX frame generation, fixtures and channels, WiFi
-priority and hotspot fallback, MQTT discovery and command handling, every serial
-command, every HTTP route, boot-time filesystem ownership, and the whole stack
-wired together the way `code.py` wires it. It also drives the real web UI in a
-headless browser against a mock board.
-
-Without Docker:
-
-```bash
-pip install -r test/requirements.txt
-python -m pytest test -v
-```
-
-See [test/README.md](test/README.md) and [WIKI.md](WIKI.md#test-suite).
-
 ## Repository layout
 
 ```
-boot.py                 Picks which side owns the filesystem at boot
-code.py                 Wiring-up and the main loop
-settings.toml           CircuitPython environment, empty by default
-.env.example            Template for preloading settings at deploy time
+platformio.ini          Build environments (s2mini / d1mini, full / headless)
 
 src/
-  dmx_driver.py         512-channel buffer, break generation, 40 fps refresh
-  devices.py            Fixture and channel model, persistence, DMX addressing
-  web_server.py         HTTP routes: the static UI plus the JSON API
-  wifi_manager.py       Saved-network database, priority connect, AP fallback
-  mqtt_manager.py       MQTT client and Home Assistant auto-discovery
-  serial_console.py     USB serial command interpreter
-  settings_store.py     JSON config files under /data, with defaults
-  version.py            Firmware version, shown on the Info page
+  main.cpp              Wiring-up and the main loop
+  config.h              Build flags, per-board defaults, pin resolution
+  version.h             Firmware version, shown on the Info page
+  dmx/
+    dmx_driver.{h,cpp}  512-channel buffer, 40 fps refresh, board-agnostic
+    dmx_backend.h       Transmit backend interface
+    dmx_backend_esp32.cpp    ESP32 break-by-GPIO transmit path
+    dmx_backend_esp8266.cpp  ESP8266 transmit path (ESPDMX-derived, Serial1)
+  devices.{h,cpp}       Fixture and channel model, persistence, DMX addressing
+  web_server.{h,cpp}    HTTP routes: the static UI plus the JSON API
+  wifi_manager.{h,cpp}  Saved-network database, priority connect, AP fallback
+  mqtt_manager.{h,cpp}  MQTT client and Home Assistant auto-discovery
+  serial_console.{h,cpp} USB/UART serial command interpreter
+  settings_store.{h,cpp} JSON config files on LittleFS, with defaults
 
-www/                    The web UI, plain HTML, CSS and JS, no build step
-lib/                    Vendored CircuitPython libraries
-data/                   Runtime config written by the board, gitignored
-
-tools/
-  deploy.py             Sync firmware to CIRCUITPY, unlocking it if needed
-  serial_console.py     Interactive serial terminal
-
-test/
-  fake_esp32/           Stand-ins for the CircuitPython hardware modules
-  ui/                   Mock board and UI screenshot tooling
-  Dockerfile            The test pipeline image
+fsdata/
+  www/                  The web UI (HTML/CSS/JS) plus a copy of the wiki,
+                        flashed to LittleFS with `uploadfs`
 
 docs/images/            Wiring schematic and UI screenshots
 ```
 
-Config lives in `/data/*.json` on the board and is gitignored, because it holds
-your WiFi and MQTT passwords in clear text.
+Runtime config lives in `/data/*.json` on the board's LittleFS. It is written by
+the firmware at runtime and is not part of the flashed image, so a firmware
+re-upload leaves your WiFi, MQTT and fixtures alone.
 
 ## Documentation
 
 **[WIKI.md](WIKI.md)** is the full reference:
 
 - every serial command, with arguments and examples
-- opening a serial session, and the deploy procedure
-- how filesystem write access works
+- opening a serial session
 - the HTTP JSON API
 - MQTT topics and Home Assistant discovery
-- the test suite and the fake hardware layer
 - troubleshooting
 
 **[CONTRIBUTING.md](CONTRIBUTING.md)** covers the pull request workflow.
 
 ## Roadmap
 
-Working today: DMX output, the web UI, the fixture model, multi-network WiFi,
-hotspot fallback, static IP, MQTT with Home Assistant discovery, the serial
-console, the deploy tooling and the test suite.
+Working today: DMX output on ESP32 and ESP8266, the web UI, the fixture model,
+multi-network WiFi, hotspot fallback, static IP, MQTT with Home Assistant
+discovery, the serial console, and the headless build option.
 
 Nothing below is a promise, and the order is rough. Items marked **carried over**
 were already on the [ESPDMX](https://github.com/CestMoiRoma/ESPDMX) roadmap.
@@ -405,27 +370,25 @@ were already on the [ESPDMX](https://github.com/CestMoiRoma/ESPDMX) roadmap.
   and a start address instead of typing channels by hand.
 - **A WebSocket for live control.** The UI currently sends one HTTP request per
   fader movement, which is the largest avoidable part of the latency described
-  above. A single socket carrying channel updates would cut it noticeably. The
-  original ESPDMX was WebSocket only, so this brings the idea back as an
-  optimisation rather than as the whole API.
+  above. A single socket carrying channel updates would cut it noticeably.
 
 ### Reliability and operations
 
 - **Apply the hostname, and announce it over mDNS.** The hostname is already
-  stored, editable in Settings and exported to `.env`, but nothing ever hands it
-  to the radio, so it currently has no effect. Setting it and advertising
-  `esp-dmx.local` would end the hunt for whatever address the router handed out.
+  stored, editable in Settings and exported to `.env`, but nothing hands it to
+  the radio yet. Setting it and advertising `esp-dmx.local` would end the hunt
+  for whatever address the router handed out.
 - **Remember the last look.** The DMX buffer starts at zero on every boot, so a
   power blip blacks out the rig until someone opens the UI. An explicit save of
-  the current state as the boot state avoids that without writing to flash on
-  every fader move.
-- **Firmware update over the network.** The board can write to its own filesystem
-  in normal operation, so it could accept an upload and replace `www/` and `src/`
-  itself. That removes the eject and unlock dance for anything that is not a
-  `boot.py` change.
+  the current state as the boot state avoids that.
+- **Firmware update over the network.** OTA updates so the box can take a new
+  build without a USB cable.
 - **A watchdog.** If the main loop wedges, the rig freezes with its last frame
-  and nothing recovers it. `microcontroller.watchdog` would reset the board
-  instead.
+  and nothing recovers it. The hardware watchdog would reset the board instead.
+- **Bring back the off-board test suite.** The CircuitPython line had 320 tests
+  that ran the firmware on a PC against a fake ESP32. That harness was not carried
+  into this rewrite; a host-compilable equivalent (native PlatformIO env, with
+  the hardware behind the existing abstraction layers) would restore it.
 - **Authentication.** There is none on the web UI or the API today, so keep the
   board on a network you trust.
 
@@ -446,4 +409,5 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 Successor to [ESPDMX](https://github.com/CestMoiRoma/ESPDMX) by
 [CestMoiRoma](https://github.com/CestMoiRoma). The wiring diagram comes from that
-project.
+project. The ESP8266 DMX transmit path is derived from the
+[ESPDMX library](https://github.com/Rickgg/ESP-Dmx) by Rick.
