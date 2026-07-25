@@ -10,11 +10,11 @@
 <header>
   <h1>DMX over WiFi</h1>
   <nav>
-    <button data-view="devices" class="nav-btn active">Devices</button>
-    <button data-view="scenes" class="nav-btn">Scenes</button>
-    <button data-view="groups" class="nav-btn">Groups</button>
-    <button data-view="settings" class="nav-btn">Settings</button>
-    <button type="button" id="blackout-btn" class="danger" title="Every channel to zero">
+    <button data-view="devices" class="nav-btn active" data-i18n="nav.devices">Devices</button>
+    <button data-view="scenes" class="nav-btn" data-i18n="nav.scenes">Scenes</button>
+    <button data-view="groups" class="nav-btn" data-i18n="nav.groups">Groups</button>
+    <button data-view="settings" class="nav-btn" data-i18n="nav.settings">Settings</button>
+    <button type="button" id="blackout-btn" class="danger" title="Every channel to zero" data-i18n="nav.blackout">
       Blackout
     </button>
   </nav>
@@ -23,36 +23,36 @@
 <main>
   <!-- Fixtures and their live controls, one merged view. -->
   <section id="view-devices" class="view active">
-    <button type="button" id="sidebar-toggle" class="secondary small sidebar-toggle">Sort and filter</button>
+    <button type="button" id="sidebar-toggle" class="secondary small sidebar-toggle" data-i18n="side.toggle">Sort and filter</button>
     <div class="devices-layout">
       <aside id="device-sidebar" class="sidebar">
         <div class="sidebar-block">
-          <label class="sidebar-label" for="device-search">Search</label>
+          <label class="sidebar-label" for="device-search" data-i18n="side.search">Search</label>
           <input type="search" id="device-search" placeholder="Name, label or category">
         </div>
 
         <div class="sidebar-block">
-          <span class="sidebar-label">Order</span>
+          <span class="sidebar-label" data-i18n="side.order">Order</span>
           <select id="device-sort">
-            <option value="az">Name, A to Z</option>
-            <option value="za">Name, Z to A</option>
-            <option value="channel">DMX address</option>
-            <option value="category">Category, then name</option>
+            <option value="az" data-i18n="sort.az">Name, A to Z</option>
+            <option value="za" data-i18n="sort.za">Name, Z to A</option>
+            <option value="channel" data-i18n="sort.channel">DMX address</option>
+            <option value="category" data-i18n="sort.category">Category, then name</option>
           </select>
         </div>
 
         <div class="sidebar-block">
-          <span class="sidebar-label">Type</span>
+          <span class="sidebar-label" data-i18n="side.type">Type</span>
           <div id="category-filters" class="chip-bar"></div>
         </div>
 
         <div class="sidebar-block">
-          <span class="sidebar-label">Labels</span>
+          <span class="sidebar-label" data-i18n="sec.labels">Labels</span>
           <div id="label-filters" class="chip-bar"></div>
         </div>
 
         <div class="sidebar-block">
-          <button type="button" id="filters-reset" class="secondary small">Clear filters</button>
+          <button type="button" id="filters-reset" class="secondary small" data-i18n="side.clear">Clear filters</button>
         </div>
       </aside>
 
@@ -61,18 +61,18 @@
   </section>
 
   <section id="view-scenes" class="view">
-    <button type="button" class="secondary small sidebar-toggle">Sort and filter</button>
+    <button type="button" class="secondary small sidebar-toggle" data-i18n="side.toggle">Sort and filter</button>
     <div class="devices-layout">
       <aside class="sidebar">
         <div class="sidebar-block">
-          <label class="sidebar-label" for="scene-search">Search</label>
+          <label class="sidebar-label" for="scene-search" data-i18n="side.search">Search</label>
           <input type="search" id="scene-search" placeholder="Name or description">
         </div>
         <div class="sidebar-block">
-          <span class="sidebar-label">Order</span>
+          <span class="sidebar-label" data-i18n="side.order">Order</span>
           <select id="scene-sort">
-            <option value="az">Name, A to Z</option>
-            <option value="za">Name, Z to A</option>
+            <option value="az" data-i18n="sort.az">Name, A to Z</option>
+            <option value="za" data-i18n="sort.za">Name, Z to A</option>
           </select>
         </div>
       </aside>
@@ -81,18 +81,18 @@
   </section>
 
   <section id="view-groups" class="view">
-    <button type="button" class="secondary small sidebar-toggle">Sort and filter</button>
+    <button type="button" class="secondary small sidebar-toggle" data-i18n="side.toggle">Sort and filter</button>
     <div class="devices-layout">
       <aside class="sidebar">
         <div class="sidebar-block">
-          <label class="sidebar-label" for="group-search">Search</label>
+          <label class="sidebar-label" for="group-search" data-i18n="side.search">Search</label>
           <input type="search" id="group-search" placeholder="Name">
         </div>
         <div class="sidebar-block">
-          <span class="sidebar-label">Order</span>
+          <span class="sidebar-label" data-i18n="side.order">Order</span>
           <select id="group-sort">
-            <option value="az">Name, A to Z</option>
-            <option value="za">Name, Z to A</option>
+            <option value="az" data-i18n="sort.az">Name, A to Z</option>
+            <option value="za" data-i18n="sort.za">Name, Z to A</option>
           </select>
         </div>
       </aside>
@@ -102,33 +102,33 @@
 
   <section id="view-settings" class="view">
     <nav class="subnav">
-      <button data-panel="config" class="subnav-btn active">Config</button>
-      <button data-panel="labels" class="subnav-btn">Labels</button>
-      <button data-panel="network" class="subnav-btn">Network</button>
-      <button data-panel="api" class="subnav-btn">API</button>
-      <button data-panel="mesh" class="subnav-btn">Parent/Child</button>
-      <button data-panel="info" class="subnav-btn">Info</button>
+      <button data-panel="config" class="subnav-btn active" data-i18n="panel.config">Config</button>
+      <button data-panel="labels" class="subnav-btn" data-i18n="sec.labels">Labels</button>
+      <button data-panel="network" class="subnav-btn" data-i18n="panel.network">Network</button>
+      <button data-panel="api" class="subnav-btn" data-i18n="panel.api">API</button>
+      <button data-panel="mesh" class="subnav-btn" data-i18n="panel.mesh">Parent/Child</button>
+      <button data-panel="info" class="subnav-btn" data-i18n="panel.info">Info</button>
     </nav>
 
     <!-- Config -->
     <div id="panel-config" class="panel active">
       <div class="section">
-        <h2>Backup and restore</h2>
+        <h2 data-i18n="sec.backup">Backup and restore</h2>
         <p class="hint">
           The <code>.json</code> file carries this board's whole live config:
           system, WiFi, MQTT, mesh, labels and fixtures. Loading one applies it
           straight away. Pin changes need a reboot to take effect.
         </p>
         <div class="form-actions start">
-          <a class="btn-link" href="/api/config" download="config.json">Save .json</a>
-          <button type="button" id="config-load-btn" class="secondary">Load .json</button>
+          <a class="btn-link" href="/api/config" download="config.json" data-i18n="btn.savejson">Save .json</a>
+          <button type="button" id="config-load-btn" class="secondary" data-i18n="btn.loadjson">Load .json</button>
           <input type="file" id="config-file" accept=".json,application/json" hidden>
         </div>
         <p id="config-status" class="hint"></p>
       </div>
 
       <div class="section" id="section-dmx-pins">
-        <h2>DMX output</h2>
+        <h2 data-i18n="sec.dmxout">DMX output</h2>
         <form id="system-pins-form" class="form-stacked">
           <div class="field">
             <label for="sys-tx">DMX TX pin</label>
@@ -145,7 +145,7 @@
             <input type="text" id="sys-dir" name="dmx_dir_pin" placeholder="IO18">
           </div>
           <div class="form-actions">
-            <button type="submit">Save</button>
+            <button type="submit" data-i18n="btn.save">Save</button>
           </div>
         </form>
         <p class="hint">Both take effect on the next reboot.</p>
@@ -167,14 +167,14 @@
             <input type="text" id="eth-cs" name="cs_pin" placeholder="10">
           </div>
           <div class="form-actions">
-            <button type="submit">Save</button>
+            <button type="submit" data-i18n="btn.save">Save</button>
           </div>
         </form>
         <p id="w5500-status" class="hint"></p>
       </div>
 
       <div class="section">
-        <h2>Save-guard</h2>
+        <h2 data-i18n="sec.saveguard">Save-guard</h2>
         <p class="hint">
           Remembers the look and puts it back after a reboot or a power cut.
           Only channels holding a value are stored, and the board waits for the
@@ -187,25 +187,39 @@
             <label for="sys-saveguard">Restore the last look on boot</label>
           </div>
           <div class="form-actions">
-            <button type="submit">Save</button>
+            <button type="submit" data-i18n="btn.save">Save</button>
           </div>
         </form>
       </div>
 
       <div class="section">
-        <h2>Reboot</h2>
+        <h2 data-i18n="form.language">Language</h2>
+        <form class="form-stacked">
+          <div class="field">
+            <label for="lang-select" data-i18n="form.language">Language</label>
+            <select id="lang-select"></select>
+            <span class="hint">
+              Stored in this browser, not on the board: two people looking at the
+              same rig from two laptops need not agree on a language.
+            </span>
+          </div>
+        </form>
+      </div>
+
+      <div class="section">
+        <h2 data-i18n="sec.reboot">Reboot</h2>
         <p class="hint">
           Pin changes, hostname changes and the WiFi switch only take effect on
           restart. DMX output stops for a couple of seconds.
         </p>
         <div class="form-actions start">
-          <button type="button" id="reboot-btn" class="secondary">Reboot the board</button>
+          <button type="button" id="reboot-btn" class="secondary" data-i18n="btn.reboot">Reboot the board</button>
         </div>
         <p id="reboot-status" class="hint"></p>
       </div>
 
       <div class="section" id="section-dmx-pins-esp8266" hidden>
-        <h2>DMX output</h2>
+        <h2 data-i18n="sec.dmxout">DMX output</h2>
         <p class="hint">
           On the ESP8266 the DMX output is wired to Serial1 on GPIO2 by the
           backend and cannot be moved, so there is nothing to configure here.
@@ -213,13 +227,13 @@
       </div>
 
       <div class="section">
-        <h2>Legacy .env export</h2>
+        <h2 data-i18n="sec.legacyenv">Legacy .env export</h2>
         <p class="hint">
           The same config as a hand-editable <code>.env</code>. Drop it next to
           <code>platformio.ini</code> to pre-fill a board at flash time.
         </p>
         <div class="form-actions start">
-          <a class="btn-link secondary-link" href="/api/export-env" download="config.env">Export .env</a>
+          <a class="btn-link secondary-link" href="/api/export-env" download="config.env" data-i18n="btn.exportenv">Export .env</a>
         </div>
       </div>
     </div>
@@ -227,7 +241,7 @@
     <!-- Labels -->
     <div id="panel-labels" class="panel">
       <div class="section">
-        <h2>Labels</h2>
+        <h2 data-i18n="sec.labels">Labels</h2>
         <p class="hint">
           Tags for fixtures. A fixture can carry several, and the Devices page
           turns them into filter chips you can combine.
@@ -237,7 +251,7 @@
           <input type="text" name="name" placeholder="Label name" required>
           <input type="color" name="color" value="#3b82f6" title="Chip colour">
           <div class="form-actions">
-            <button type="submit">Create label</button>
+            <button type="submit" data-i18n="btn.createlabel">Create label</button>
           </div>
         </form>
       </div>
@@ -246,7 +260,7 @@
     <!-- WiFi -->
     <div id="panel-network" class="panel">
       <div class="section">
-        <h2>Saved networks</h2>
+        <h2 data-i18n="sec.networks">Saved networks</h2>
         <p class="hint">
           Tried from the top down. Drag an entry to change the order, which is
           the priority. Each network keeps its own addressing.
@@ -257,23 +271,23 @@
           <datalist id="wifi-scan-results"></datalist>
           <input type="password" name="password" placeholder="Password">
           <div class="form-actions">
-            <button type="submit">Add</button>
-            <button type="button" id="wifi-scan-btn" class="secondary">Scan</button>
+            <button type="submit" data-i18n="btn.add">Add</button>
+            <button type="button" id="wifi-scan-btn" class="secondary" data-i18n="btn.scan">Scan</button>
           </div>
         </form>
         <div id="wifi-scan-list"></div>
       </div>
 
       <div class="section">
-        <h2>Identity</h2>
+        <h2 data-i18n="sec.identity">Identity</h2>
         <form id="hostname-form" class="form-stacked">
           <div class="field">
-            <label for="sys-hostname">Hostname</label>
+            <label for="sys-hostname" data-i18n="info.hostname">Hostname</label>
             <input type="text" id="sys-hostname" name="hostname">
             <span class="hint" id="hostname-hint"></span>
           </div>
           <div class="form-actions">
-            <button type="submit">Save</button>
+            <button type="submit" data-i18n="btn.save">Save</button>
           </div>
         </form>
       </div>
@@ -283,32 +297,32 @@
         <p class="hint" id="eth-state">Checking...</p>
         <form id="eth-address-form" class="form-stacked">
           <div class="field">
-            <label for="eth-mode">Addressing</label>
+            <label for="eth-mode" data-i18n="form.addressing">Addressing</label>
             <select id="eth-mode" name="ip_mode">
-              <option value="dhcp">DHCP (automatic)</option>
-              <option value="static">Static</option>
+              <option value="dhcp" data-i18n="mode.dhcp">DHCP (automatic)</option>
+              <option value="static" data-i18n="mode.static">Static</option>
             </select>
           </div>
           <div id="eth-static-fields" hidden>
             <div class="field">
-              <label for="eth-ip">IP address</label>
+              <label for="eth-ip" data-i18n="form.ip">IP address</label>
               <input type="text" id="eth-ip" name="static_ip" placeholder="192.168.1.100">
             </div>
             <div class="field">
-              <label for="eth-mask">Netmask</label>
+              <label for="eth-mask" data-i18n="form.netmask">Netmask</label>
               <input type="text" id="eth-mask" name="static_netmask" placeholder="255.255.255.0">
             </div>
             <div class="field">
-              <label for="eth-gw">Gateway</label>
+              <label for="eth-gw" data-i18n="form.gateway">Gateway</label>
               <input type="text" id="eth-gw" name="static_gateway" placeholder="192.168.1.1">
             </div>
             <div class="field">
-              <label for="eth-dns">DNS</label>
+              <label for="eth-dns" data-i18n="form.dns">DNS</label>
               <input type="text" id="eth-dns" name="static_dns" placeholder="1.1.1.1">
             </div>
           </div>
           <div class="form-actions">
-            <button type="submit">Save</button>
+            <button type="submit" data-i18n="btn.save">Save</button>
           </div>
         </form>
       </div>
@@ -321,7 +335,7 @@
             <input type="text" id="sys-ap-ssid" name="ap_ssid">
           </div>
           <div class="field">
-            <label for="sys-ap-pass">Password</label>
+            <label for="sys-ap-pass" data-i18n="form.password">Password</label>
             <input type="password" id="sys-ap-pass" name="ap_password">
           </div>
           <div class="field">
@@ -329,7 +343,7 @@
             <input type="text" id="sys-ap-ip" name="ap_ip">
           </div>
           <div class="form-actions">
-            <button type="submit">Save</button>
+            <button type="submit" data-i18n="btn.save">Save</button>
           </div>
         </form>
       </div>
@@ -338,7 +352,7 @@
     <!-- API -->
     <div id="panel-api" class="panel">
       <div class="section">
-        <h2>Modules</h2>
+        <h2 data-i18n="sec.modules">Modules</h2>
         <p class="hint">
           Each subsystem can be switched off entirely. Turning MQTT off leaves
           its broker settings below intact for when it comes back.
@@ -359,13 +373,13 @@
             <label for="mod-mqtt">MQTT bridge</label>
           </div>
           <div class="form-actions">
-            <button type="submit">Save</button>
+            <button type="submit" data-i18n="btn.save">Save</button>
           </div>
         </form>
       </div>
 
       <div class="section">
-        <h2>API key</h2>
+        <h2 data-i18n="sec.apikey">API key</h2>
         <p class="hint">
           Required by every caller except the UI this page is served from, in an
           <code>X-API-Key</code> header or an <code>api_key</code> query
@@ -375,41 +389,41 @@
           <input type="text" id="api-key" readonly>
         </div>
         <div class="form-actions start">
-          <button type="button" id="api-key-copy" class="secondary">Copy</button>
-          <button type="button" id="api-key-new" class="secondary">Regenerate</button>
+          <button type="button" id="api-key-copy" class="secondary" data-i18n="btn.copy">Copy</button>
+          <button type="button" id="api-key-new" class="secondary" data-i18n="btn.regen">Regenerate</button>
         </div>
         <p id="api-key-status" class="hint"></p>
       </div>
 
       <div class="section" id="section-mqtt-broker">
-        <h2>MQTT broker</h2>
+        <h2 data-i18n="sec.broker">MQTT broker</h2>
         <form id="mqtt-form" class="form-stacked">
           <div class="field">
-            <label for="mqtt-host">Broker host</label>
+            <label for="mqtt-host" data-i18n="form.brokerhost">Broker host</label>
             <input type="text" id="mqtt-host" name="host">
           </div>
           <div class="field">
-            <label for="mqtt-port">Port</label>
+            <label for="mqtt-port" data-i18n="form.port">Port</label>
             <input type="number" id="mqtt-port" name="port" value="1883">
           </div>
           <div class="field">
-            <label for="mqtt-username">Username</label>
+            <label for="mqtt-username" data-i18n="form.username">Username</label>
             <input type="text" id="mqtt-username" name="username">
           </div>
           <div class="field">
-            <label for="mqtt-password">Password</label>
+            <label for="mqtt-password" data-i18n="form.password">Password</label>
             <input type="password" id="mqtt-password" name="password">
           </div>
           <div class="field">
-            <label for="mqtt-base">Base topic</label>
+            <label for="mqtt-base" data-i18n="form.basetopic">Base topic</label>
             <input type="text" id="mqtt-base" name="base_topic">
           </div>
           <div class="field">
-            <label for="mqtt-discovery">Discovery prefix</label>
+            <label for="mqtt-discovery" data-i18n="form.discovery">Discovery prefix</label>
             <input type="text" id="mqtt-discovery" name="discovery_prefix">
           </div>
           <div class="form-actions">
-            <button type="submit">Save</button>
+            <button type="submit" data-i18n="btn.save">Save</button>
           </div>
         </form>
       </div>
@@ -422,7 +436,7 @@
           <span class="hint">(stored only, no effect yet)</span></h2>
         <form id="mesh-form" class="form-stacked">
           <div class="field">
-            <label for="mesh-role">Role</label>
+            <label for="mesh-role" data-i18n="form.role">Role</label>
             <select id="mesh-role" name="role">
               <option value="none">None</option>
               <option value="parent">Parent</option>
@@ -430,15 +444,15 @@
             </select>
           </div>
           <div class="field">
-            <label for="mesh-ssid">Mesh SSID (hidden)</label>
+            <label for="mesh-ssid" data-i18n="form.meshssid">Mesh SSID (hidden)</label>
             <input type="text" id="mesh-ssid" name="ssid">
           </div>
           <div class="field">
-            <label for="mesh-pass">Mesh password</label>
+            <label for="mesh-pass" data-i18n="form.meshpass">Mesh password</label>
             <input type="password" id="mesh-pass" name="password">
           </div>
           <div class="form-actions">
-            <button type="submit">Save</button>
+            <button type="submit" data-i18n="btn.save">Save</button>
           </div>
         </form>
       </div>
@@ -447,20 +461,20 @@
     <!-- Info -->
     <div id="panel-info" class="panel">
       <div class="section">
-        <h2>DMX over WiFi</h2>
+        <h2 data-i18n="app.title">DMX over WiFi</h2>
         <p class="info-version">version <span id="info-version">...</span></p>
         <dl class="info-list">
-          <dt>Board</dt>
+          <dt data-i18n="info.board">Board</dt>
           <dd id="info-board"></dd>
-          <dt>Hostname</dt>
+          <dt data-i18n="info.hostname">Hostname</dt>
           <dd id="info-hostname"></dd>
-          <dt>Live control</dt>
+          <dt data-i18n="info.live">Live control</dt>
           <dd id="info-transport"></dd>
-          <dt>Author</dt>
+          <dt data-i18n="info.author">Author</dt>
           <dd id="info-author"></dd>
-          <dt>Repository</dt>
+          <dt data-i18n="info.repo">Repository</dt>
           <dd id="info-repo"></dd>
-          <dt>Serial console reference</dt>
+          <dt data-i18n="info.serialref">Serial console reference</dt>
           <dd id="info-wiki"></dd>
         </dl>
       </div>
@@ -486,17 +500,17 @@
     </div>
     <form id="scene-form" class="form-stacked">
       <div class="field">
-        <label for="scene-name">Name</label>
+        <label for="scene-name" data-i18n="form.name">Name</label>
         <input type="text" id="scene-name" name="name" required>
       </div>
       <div class="field">
-        <label for="scene-desc">Description</label>
+        <label for="scene-desc" data-i18n="form.description">Description</label>
         <input type="text" id="scene-desc" name="description">
       </div>
       <div class="channels-block">
         <div class="channels-block-header">
           <span>Channels in this scene</span>
-          <button type="button" id="scene-capture" class="secondary small">Capture the live look</button>
+          <button type="button" id="scene-capture" class="secondary small" data-i18n="btn.capture">Capture the live look</button>
         </div>
         <p class="hint">
           Tick what the scene should set. Capture fills every value from what the
@@ -505,8 +519,8 @@
         <div id="scene-picker"></div>
       </div>
       <div class="form-actions">
-        <button type="button" class="secondary" data-close-scene>Cancel</button>
-        <button type="submit" id="scene-submit">Create scene</button>
+        <button type="button" class="secondary" data-close-scene data-i18n="btn.cancel">Cancel</button>
+        <button type="submit" id="scene-submit" data-i18n="btn.createscene">Create scene</button>
       </div>
     </form>
   </div>
@@ -551,9 +565,9 @@
       <div id="group-step"></div>
       <p id="group-error" class="form-error" hidden></p>
       <div class="form-actions">
-        <button type="button" class="secondary" data-close-group>Cancel</button>
-        <button type="button" id="group-back" class="secondary" hidden>Back</button>
-        <button type="submit" id="group-submit">Next</button>
+        <button type="button" class="secondary" data-close-group data-i18n="btn.cancel">Cancel</button>
+        <button type="button" id="group-back" class="secondary" hidden data-i18n="btn.back">Back</button>
+        <button type="submit" id="group-submit" data-i18n="btn.next">Next</button>
       </div>
     </form>
   </div>
@@ -600,36 +614,36 @@
     </div>
     <form id="ez-form" class="form-stacked">
       <div class="field">
-        <label for="ez-name">Name</label>
+        <label for="ez-name" data-i18n="form.name">Name</label>
         <input type="text" id="ez-name" name="name" required>
       </div>
       <div class="field">
-        <label for="ez-kind">Control type</label>
+        <label for="ez-kind" data-i18n="form.controltype">Control type</label>
         <select id="ez-kind" name="kind"></select>
       </div>
       <div class="field">
-        <label for="ez-category">Category</label>
+        <label for="ez-category" data-i18n="form.category">Category</label>
         <select id="ez-category" name="category"></select>
       </div>
       <div class="field">
-        <label for="ez-start">Start channel</label>
+        <label for="ez-start" data-i18n="form.startchannel">Start channel</label>
         <input type="number" id="ez-start" name="start_channel" min="1" max="512" required>
         <span class="hint">The fixture's own DMX address, as set on the projector.</span>
       </div>
       <div class="field">
-        <label>Labels</label>
+        <label data-i18n="sec.labels">Labels</label>
         <div id="ez-labels" class="chip-bar picker"></div>
       </div>
       <div class="channels-block">
-        <div class="channels-block-header"><span>Channels</span></div>
+        <div class="channels-block-header"><span data-i18n="form.channels">Channels</span></div>
         <p class="hint" id="ez-roles-hint"></p>
         <div id="ez-roles"></div>
       </div>
       <div id="ez-options"></div>
       <p id="ez-error" class="form-error" hidden></p>
       <div class="form-actions">
-        <button type="button" class="secondary" data-close-ez>Cancel</button>
-        <button type="submit" id="ez-submit">Create device</button>
+        <button type="button" class="secondary" data-close-ez data-i18n="btn.cancel">Cancel</button>
+        <button type="submit" id="ez-submit" data-i18n="btn.createdevice">Create device</button>
       </div>
     </form>
   </div>
@@ -651,36 +665,36 @@
         <input type="text" id="wifi-edit-ssid" name="ssid" required>
       </div>
       <div class="field">
-        <label for="wifi-edit-pass">Password</label>
+        <label for="wifi-edit-pass" data-i18n="form.password">Password</label>
         <input type="password" id="wifi-edit-pass" name="password">
       </div>
       <div class="field">
-        <label for="wifi-edit-mode">Addressing</label>
+        <label for="wifi-edit-mode" data-i18n="form.addressing">Addressing</label>
         <select id="wifi-edit-mode" name="ip_mode">
-          <option value="dhcp">DHCP (automatic)</option>
-          <option value="static">Static</option>
+          <option value="dhcp" data-i18n="mode.dhcp">DHCP (automatic)</option>
+          <option value="static" data-i18n="mode.static">Static</option>
         </select>
       </div>
       <div id="wifi-static-fields" hidden>
         <div class="field">
-          <label for="wifi-edit-ip">IP address</label>
+          <label for="wifi-edit-ip" data-i18n="form.ip">IP address</label>
           <input type="text" id="wifi-edit-ip" name="static_ip" placeholder="192.168.1.100">
         </div>
         <div class="field">
-          <label for="wifi-edit-mask">Netmask</label>
+          <label for="wifi-edit-mask" data-i18n="form.netmask">Netmask</label>
           <input type="text" id="wifi-edit-mask" name="static_netmask" placeholder="255.255.255.0">
         </div>
         <div class="field">
-          <label for="wifi-edit-gw">Gateway</label>
+          <label for="wifi-edit-gw" data-i18n="form.gateway">Gateway</label>
           <input type="text" id="wifi-edit-gw" name="static_gateway" placeholder="192.168.1.1">
         </div>
         <div class="field">
-          <label for="wifi-edit-dns">DNS</label>
+          <label for="wifi-edit-dns" data-i18n="form.dns">DNS</label>
           <input type="text" id="wifi-edit-dns" name="static_dns" placeholder="1.1.1.1">
         </div>
       </div>
       <div class="form-actions">
-        <button type="button" class="secondary" data-close-wifi>Cancel</button>
+        <button type="button" class="secondary" data-close-wifi data-i18n="btn.cancel">Cancel</button>
         <button type="submit">Save network</button>
       </div>
     </form>
@@ -699,33 +713,33 @@
     </div>
     <form id="device-form" class="form-stacked">
       <div class="field">
-        <label for="device-name">Name</label>
+        <label for="device-name" data-i18n="form.name">Name</label>
         <input type="text" id="device-name" name="name" required>
       </div>
       <div class="field">
-        <label for="device-category">Category</label>
+        <label for="device-category" data-i18n="form.category">Category</label>
         <select id="device-category" name="category"></select>
         <span class="hint">What kind of machine this is. Fixed list, unlike labels.</span>
       </div>
       <div class="field">
-        <label for="device-start">Start channel</label>
+        <label for="device-start" data-i18n="form.startchannel">Start channel</label>
         <input type="number" id="device-start" name="start_channel" min="1" max="512" required>
         <span class="hint">The fixture's own DMX address, as set on the projector.</span>
       </div>
       <div class="field">
-        <label>Labels</label>
+        <label data-i18n="sec.labels">Labels</label>
         <div id="device-labels" class="chip-bar picker"></div>
       </div>
       <div class="channels-block">
         <div class="channels-block-header">
-          <span>Channels</span>
-          <button type="button" id="add-channel-row" class="secondary small">+ channel</button>
+          <span data-i18n="form.channels">Channels</span>
+          <button type="button" id="add-channel-row" class="secondary small" data-i18n="btn.addchannel">+ channel</button>
         </div>
         <div id="channel-rows"></div>
       </div>
       <div class="form-actions">
-        <button type="button" class="secondary" data-close>Cancel</button>
-        <button type="submit" id="device-submit">Create device</button>
+        <button type="button" class="secondary" data-close data-i18n="btn.cancel">Cancel</button>
+        <button type="submit" id="device-submit" data-i18n="btn.createdevice">Create device</button>
       </div>
     </form>
   </div>

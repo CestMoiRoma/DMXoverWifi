@@ -145,17 +145,11 @@ how many channels it is about to move.
 
 ### UI
 
-- Everything is centred and the cards are narrow. Pin the filter column to the
-  left edge of the page instead.
-- **i18n**, one JSON per language: FR, EN, DE, ES.
-- ~~MQTT: the Enable is duplicated.~~ Done: one switch, broker settings hidden
-  while it is off, and MQTT ships disabled.
-- Prettier cards: the switch-to-lite becomes a small icon like the bin and the
-  gear; EZ sliders go vertical with 0/25/50 stacked vertically on their left;
-  Save look stays at the bottom.
-- Clicking a colour on the wheel takes the dimmer to full.
-- Double-click the wheel recentres it, as the joystick does.
-- **Lite cards are not to be touched.**
+All done. One thing to know about the i18n: the **chrome** is translated, which
+is everything a user scans or clicks, 83 strings across the four languages. The
+long explanatory paragraphs are still English. Four times that much prose is a
+different job from wiring the mechanism, and adding one now costs a line per
+language file.
 
 ### Decisions taken
 

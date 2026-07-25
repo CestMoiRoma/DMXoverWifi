@@ -54,6 +54,69 @@ function iconButton(paths, title, onClick) {
   return btn;
 }
 
+// ---- language ----
+//
+// Every table is inlined in the page by tools/pack_web.py, so switching is
+// instant and needs no network. The choice is a browser preference rather than
+// a board setting: two people looking at the same rig from two laptops should
+// not have to agree on a language.
+
+const LANGUAGES = { en: "English", fr: "Français", de: "Deutsch", es: "Español" };
+let lang = "en";
+
+function t(key, fallback) {
+  const tables = window.I18N || {};
+  const table = tables[lang] || {};
+  if (table[key]) return table[key];
+  const english = tables.en || {};
+  // Falling back to English rather than showing the key: a missing translation
+  // should read as untranslated, not as broken.
+  return english[key] || fallback || key;
+}
+
+function applyTranslations() {
+  document.documentElement.lang = lang;
+  document.querySelectorAll("[data-i18n]").forEach((node) => {
+    node.textContent = t(node.dataset.i18n, node.textContent);
+  });
+  document.querySelectorAll("[data-i18n-placeholder]").forEach((node) => {
+    node.setAttribute("placeholder", t(node.dataset.i18nPlaceholder, node.placeholder));
+  });
+}
+
+function setLanguage(code) {
+  lang = LANGUAGES[code] ? code : "en";
+  try {
+    localStorage.setItem("dmx-lang", lang);
+  } catch (e) {
+    // Private browsing refuses storage; the choice just will not stick.
+  }
+  applyTranslations();
+}
+
+function initLanguage() {
+  let stored = null;
+  try {
+    stored = localStorage.getItem("dmx-lang");
+  } catch (e) {
+    stored = null;
+  }
+  // No stored choice: follow the browser, since it already knows.
+  const guess = (navigator.language || "en").slice(0, 2).toLowerCase();
+  lang = LANGUAGES[stored] ? stored : LANGUAGES[guess] ? guess : "en";
+
+  const select = document.getElementById("lang-select");
+  if (select) {
+    select.innerHTML = "";
+    Object.keys(LANGUAGES).forEach((code) =>
+      select.appendChild(el("option", { value: code }, [LANGUAGES[code]]))
+    );
+    select.value = lang;
+    select.addEventListener("change", () => setLanguage(select.value));
+  }
+  applyTranslations();
+}
+
 // ---- live channel transport ----
 //
 // A slider dragged across its travel emits values far faster than one HTTP
@@ -2896,6 +2959,7 @@ async function renderInfo() {
     boardInfo = {};
     apiKey = null;
   }
+  initLanguage();
   connectWebSocket();
   // The ESP8266 backend is nailed to Serial1/GPIO2, so offering pin fields there
   // would promise something the firmware cannot honour.

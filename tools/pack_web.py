@@ -20,6 +20,7 @@ WIKI.md, since that copy is made here too.
 """
 
 import gzip
+import json
 import os
 import shutil
 
@@ -62,8 +63,23 @@ def main():
             raise Exception("pack_web: web/index.html no longer contains %s; "
                             "the packer looks for it verbatim to know where %s goes" % (tag, name))
 
+    # Every language rides inside the page. Switching is then instant and works
+    # with no network at all, and the page stays the single request it was made
+    # into. Four tables of interface strings cost about a kilobyte gzipped,
+    # which is a fair price for not adding a second fetch back.
+    languages = {}
+    i18n_dir = os.path.join(web_dir, "i18n")
+    if os.path.isdir(i18n_dir):
+        for name in sorted(os.listdir(i18n_dir)):
+            if name.endswith(".json"):
+                languages[name[:-5]] = json.loads(read(os.path.join(i18n_dir, name)))
+
     html = html.replace(LINK_TAG, "<style>\n%s\n</style>" % css)
-    html = html.replace(SCRIPT_TAG, "<script>\n%s\n</script>" % js)
+    html = html.replace(
+        SCRIPT_TAG,
+        "<script>\nwindow.I18N = %s;\n</script>\n<script>\n%s\n</script>"
+        % (json.dumps(languages, ensure_ascii=False, separators=(",", ":")), js),
+    )
 
     # Start clean, so a file this script no longer produces cannot linger in the
     # image and be served in place of the one it does.
