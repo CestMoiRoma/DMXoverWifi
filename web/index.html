@@ -18,16 +18,48 @@
 <main>
   <!-- Fixtures and their live controls, one merged view. -->
   <section id="view-devices" class="view active">
-    <div id="category-filters" class="chip-bar"></div>
-    <div id="label-filters" class="chip-bar"></div>
-    <div id="device-grid"></div>
+    <button type="button" id="sidebar-toggle" class="secondary small">Sort and filter</button>
+    <div class="devices-layout">
+      <aside id="device-sidebar" class="sidebar">
+        <div class="sidebar-block">
+          <label class="sidebar-label" for="device-search">Search</label>
+          <input type="search" id="device-search" placeholder="Name, label or category">
+        </div>
+
+        <div class="sidebar-block">
+          <span class="sidebar-label">Order</span>
+          <select id="device-sort">
+            <option value="az">Name, A to Z</option>
+            <option value="za">Name, Z to A</option>
+            <option value="channel">DMX address</option>
+            <option value="category">Category, then name</option>
+          </select>
+        </div>
+
+        <div class="sidebar-block">
+          <span class="sidebar-label">Type</span>
+          <div id="category-filters" class="chip-bar"></div>
+        </div>
+
+        <div class="sidebar-block">
+          <span class="sidebar-label">Labels</span>
+          <div id="label-filters" class="chip-bar"></div>
+        </div>
+
+        <div class="sidebar-block">
+          <button type="button" id="filters-reset" class="secondary small">Clear filters</button>
+        </div>
+      </aside>
+
+      <div id="device-grid" class="device-grid"></div>
+    </div>
   </section>
 
   <section id="view-settings" class="view">
     <nav class="subnav">
       <button data-panel="config" class="subnav-btn active">Config</button>
       <button data-panel="labels" class="subnav-btn">Labels</button>
-      <button data-panel="wifi" class="subnav-btn">WiFi</button>
+      <button data-panel="network" class="subnav-btn">Network</button>
       <button data-panel="api" class="subnav-btn">API</button>
       <button data-panel="mesh" class="subnav-btn">Parent/Child</button>
       <button data-panel="info" class="subnav-btn">Info</button>
@@ -72,6 +104,28 @@
           </div>
         </form>
         <p class="hint">Both take effect on the next reboot.</p>
+      </div>
+
+      <div class="section" id="section-w5500">
+        <h2>Wired Ethernet <span class="beta-tag">beta</span></h2>
+        <p class="hint">
+          A W5500 module on SPI, as an alternative to WiFi. Addressing lives on
+          the Network page. Takes effect on the next reboot.
+        </p>
+        <form id="w5500-form" class="form-stacked">
+          <div class="field field-inline">
+            <input type="checkbox" id="eth-enabled" name="enabled">
+            <label for="eth-enabled">Enable the W5500 module</label>
+          </div>
+          <div class="field">
+            <label for="eth-cs">SPI chip-select pin</label>
+            <input type="text" id="eth-cs" name="cs_pin" placeholder="10">
+          </div>
+          <div class="form-actions">
+            <button type="submit">Save</button>
+          </div>
+        </form>
+        <p id="w5500-status" class="hint"></p>
       </div>
 
       <div class="section">
@@ -126,7 +180,7 @@
     </div>
 
     <!-- WiFi -->
-    <div id="panel-wifi" class="panel">
+    <div id="panel-network" class="panel">
       <div class="section">
         <h2>Saved networks</h2>
         <p class="hint">
@@ -152,6 +206,41 @@
             <label for="sys-hostname">Hostname</label>
             <input type="text" id="sys-hostname" name="hostname">
             <span class="hint" id="hostname-hint"></span>
+          </div>
+          <div class="form-actions">
+            <button type="submit">Save</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="section" id="section-eth-address">
+        <h2>Wired Ethernet <span class="beta-tag">beta</span></h2>
+        <p class="hint" id="eth-state">Checking...</p>
+        <form id="eth-address-form" class="form-stacked">
+          <div class="field">
+            <label for="eth-mode">Addressing</label>
+            <select id="eth-mode" name="ip_mode">
+              <option value="dhcp">DHCP (automatic)</option>
+              <option value="static">Static</option>
+            </select>
+          </div>
+          <div id="eth-static-fields" hidden>
+            <div class="field">
+              <label for="eth-ip">IP address</label>
+              <input type="text" id="eth-ip" name="static_ip" placeholder="192.168.1.100">
+            </div>
+            <div class="field">
+              <label for="eth-mask">Netmask</label>
+              <input type="text" id="eth-mask" name="static_netmask" placeholder="255.255.255.0">
+            </div>
+            <div class="field">
+              <label for="eth-gw">Gateway</label>
+              <input type="text" id="eth-gw" name="static_gateway" placeholder="192.168.1.1">
+            </div>
+            <div class="field">
+              <label for="eth-dns">DNS</label>
+              <input type="text" id="eth-dns" name="static_dns" placeholder="1.1.1.1">
+            </div>
           </div>
           <div class="form-actions">
             <button type="submit">Save</button>
@@ -268,7 +357,8 @@
     <!-- Parent/Child -->
     <div id="panel-mesh" class="panel">
       <div class="section">
-        <h2>Parent/Child mode <span class="hint">(WIP, stored only, no effect yet)</span></h2>
+        <h2>Parent/Child mode <span class="beta-tag">beta</span>
+          <span class="hint">(stored only, no effect yet)</span></h2>
         <form id="mesh-form" class="form-stacked">
           <div class="field">
             <label for="mesh-role">Role</label>

@@ -299,6 +299,23 @@ void DmxWebServer::registerRoutes() {
     sendJson(200, doc);
   });
 
+  // -- ethernet (W5500), never yet run against the chip --
+  onApi("/api/ethernet", HTTP_GET, [this]() {
+    JsonDocument doc;
+    _ethernet.copyConfigTo(doc.to<JsonObject>());
+    _ethernet.statusToJson(doc["status"].to<JsonObject>());
+    sendJson(200, doc);
+  });
+  onApi("/api/ethernet", HTTP_POST, [this]() {
+    JsonDocument body;
+    parseBody(body);
+    _ethernet.setConfig(body.as<JsonObjectConst>());
+    JsonDocument doc;
+    _ethernet.copyConfigTo(doc.to<JsonObject>());
+    doc["reboot_required"] = true;
+    sendJson(200, doc);
+  });
+
   // -- mqtt --
   onApi("/api/mqtt", HTTP_GET, [this]() {
     JsonDocument doc;

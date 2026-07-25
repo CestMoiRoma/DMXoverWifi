@@ -4,6 +4,7 @@
 #include "config.h"
 #include "devices.h"
 #include "dmx/dmx_driver.h"
+#include "ethernet_manager.h"
 #include "labels.h"
 #include "modules.h"
 #include "mqtt_manager.h"
@@ -19,9 +20,10 @@ static DeviceManager deviceManager(dmx);
 static LabelStore labelStore;
 static ModuleSettings modules;
 static WifiManager wifiManager;
+static EthernetManager ethernet;
 static MqttManager mqttManager(deviceManager);
 static WsServer wsServer(deviceManager, modules);
-static DmxWebServer webServer(deviceManager, labelStore, modules, wifiManager, mqttManager);
+static DmxWebServer webServer(deviceManager, labelStore, modules, wifiManager, ethernet, mqttManager);
 static SerialConsole serialConsole(deviceManager, labelStore, wifiManager, mqttManager);
 
 void setup() {
@@ -50,6 +52,11 @@ void setup() {
     wifiManager.setDisabled();
     return;
   }
+
+  // Before WiFi: a wired link that is up saves the radio a scan and a join.
+  // Every wait inside is bounded, so a board configured for Ethernet with no
+  // adapter attached still gets here.
+  ethernet.begin();
 
   wifiManager.begin();
   mqttManager.begin();
@@ -88,6 +95,7 @@ void loop() {
     webServer.handleClient();
     wsServer.loop();
     wifiManager.loop();
+    ethernet.loop();
     if (modules.mqttEnabled()) mqttManager.loop();
   }
   deviceManager.tickBursts();

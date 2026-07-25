@@ -43,6 +43,7 @@ const ICON_GEAR = [
   "M19.4 13a1.7 1.7 0 00.4 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.4 1.7 1.7 0 00-1 1.5V19a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.4l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.4-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.4-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.4H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.4l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.4 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z",
 ];
 const ICON_PLUS = ["M12 5v14", "M5 12h14"];
+const ICON_EXPORT = ["M12 19V5", "M5 12l7-7 7 7"];
 
 function iconButton(paths, title, onClick) {
   const btn = el("button", { type: "button", class: "icon-btn", title: title, "aria-label": title });
@@ -159,7 +160,30 @@ let labelsCache = [];
 let categoriesCache = [];
 let activeFilters = new Set();
 let activeCategories = new Set();
+let searchTerm = "";
+let sortMode = "az";
 let boardInfo = {};
+
+// Saves a fixture as a file the board can take back. The shape is deliberately
+// the same object /api/devices returns and /api/devices accepts, so a saved
+// fixture is a fragment of a full config backup rather than its own format.
+// The live channel values are stripped: this describes a fixture, not a look.
+function downloadFixture(device) {
+  const copy = JSON.parse(JSON.stringify(device));
+  delete copy.id;  // the board mints a fresh one on import
+  (copy.channels || []).forEach((c) => delete c.value);
+  const blob = new Blob([JSON.stringify(copy, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = el("a", { href: url, download: safeFileName(device.name) + ".json" });
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function safeFileName(name) {
+  return (name || "fixture").replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "fixture";
+}
 
 function labelById(id) {
   return labelsCache.find((l) => l.id === id);
@@ -212,7 +236,7 @@ function renderFilterChips(devices) {
   ]);
   all.addEventListener("click", () => {
     activeFilters.clear();
-    renderDevices();
+    redrawDevices();
   });
   bar.appendChild(all);
 
@@ -247,7 +271,7 @@ function renderCategoryChips(devices) {
   );
   all.addEventListener("click", () => {
     activeCategories.clear();
-    renderDevices();
+    redrawDevices();
   });
   bar.appendChild(all);
 
@@ -260,7 +284,7 @@ function renderCategoryChips(devices) {
     chip.addEventListener("click", () => {
       if (on) activeCategories.delete(cat.id);
       else activeCategories.add(cat.id);
-      renderDevices();
+      redrawDevices();
     });
     bar.appendChild(chip);
   });
@@ -269,11 +293,37 @@ function renderCategoryChips(devices) {
 // Categories and labels are independent facets: a fixture must satisfy both
 // bars, but within one bar the chips widen the selection rather than
 // intersecting. Picking Face and Contre shows both, picking PAR on top of them
-// narrows that to the PARs among them.
+// narrows that to the PARs among them. Search narrows further again.
 function matchesFilters(device) {
   if (activeCategories.size && !activeCategories.has(device.category)) return false;
-  if (activeFilters.size === 0) return true;
-  return (device.labels || []).some((id) => activeFilters.has(id));
+  if (activeFilters.size && !(device.labels || []).some((id) => activeFilters.has(id))) return false;
+  if (!searchTerm) return true;
+  // One box across all three, because looking for "face" should find the label
+  // and looking for "lyre" should find the category, without first asking which
+  // kind of thing the word is.
+  const haystack = [
+    device.name,
+    categoryName(device.category),
+    ...(device.labels || []).map((id) => (labelById(id) || {}).name || ""),
+  ]
+    .join(" ")
+    .toLowerCase();
+  return haystack.indexOf(searchTerm) !== -1;
+}
+
+function sortDevices(devices) {
+  const byName = (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+  const sorted = devices.slice();
+  if (sortMode === "az") sorted.sort(byName);
+  else if (sortMode === "za") sorted.sort((a, b) => byName(b, a));
+  else if (sortMode === "channel") sorted.sort((a, b) => a.start_channel - b.start_channel);
+  else if (sortMode === "category") {
+    sorted.sort((a, b) => {
+      const byCat = categoryName(a.category).localeCompare(categoryName(b.category));
+      return byCat !== 0 ? byCat : byName(a, b);
+    });
+  }
+  return sorted;
 }
 
 function channelControl(device, channel) {
@@ -362,6 +412,9 @@ function deviceCard(device) {
   head.appendChild(title);
 
   const actions = el("div", { class: "card-actions" });
+  actions.appendChild(
+    iconButton(ICON_EXPORT, "Save as JSON", () => downloadFixture(device))
+  );
   actions.appendChild(iconButton(ICON_GEAR, "Edit", () => openDeviceModal(device, device.id)));
   actions.appendChild(
     iconButton(ICON_PLUS, "Duplicate", () => {
@@ -403,10 +456,20 @@ function deviceCard(device) {
   return card;
 }
 
+let devicesCache = [];
+
+// Typing in the search box or changing the order only rearranges what is
+// already on screen, so it redraws from the cache. Refetching per keystroke
+// would put a request on the board for every letter.
 async function renderDevices() {
   labelsCache = await api("/api/labels");
   if (categoriesCache.length === 0) categoriesCache = await api("/api/categories");
-  const devices = await api("/api/devices");
+  devicesCache = await api("/api/devices");
+  redrawDevices();
+}
+
+function redrawDevices() {
+  const devices = devicesCache;
   renderCategoryChips(devices);
   renderFilterChips(devices);
 
@@ -417,13 +480,39 @@ async function renderDevices() {
     grid.appendChild(el("p", { class: "empty" }, ["No fixtures yet. Add one with the + button."]));
     return;
   }
-  const shown = devices.filter(matchesFilters);
+  const shown = sortDevices(devices.filter(matchesFilters));
   if (shown.length === 0) {
     grid.appendChild(el("p", { class: "empty" }, ["No fixture matches the selected filters."]));
     return;
   }
   shown.forEach((device) => grid.appendChild(deviceCard(device)));
 }
+
+// ---- sort and filter column ----
+
+document.getElementById("device-search").addEventListener("input", (e) => {
+  searchTerm = e.target.value.trim().toLowerCase();
+  redrawDevices();
+});
+
+document.getElementById("device-sort").addEventListener("change", (e) => {
+  sortMode = e.target.value;
+  redrawDevices();
+});
+
+document.getElementById("filters-reset").addEventListener("click", () => {
+  activeFilters.clear();
+  activeCategories.clear();
+  searchTerm = "";
+  document.getElementById("device-search").value = "";
+  redrawDevices();
+});
+
+// On a phone the column would push the fixtures off the screen, so it folds
+// away and this opens it. On a wide screen it is simply always there.
+document.getElementById("sidebar-toggle").addEventListener("click", () => {
+  document.getElementById("device-sidebar").classList.toggle("open");
+});
 
 // ---- device modal: create, edit and duplicate ----
 
@@ -603,6 +692,7 @@ async function renderSettings() {
   meshForm.password.value = mesh.password || "";
 
   await renderLabelList();
+  await renderEthernet();
 }
 
 // -- config backup and restore --
@@ -831,6 +921,76 @@ document.getElementById("ap-form").addEventListener("submit", async (e) => {
     ap_password: form.ap_password.value,
     ap_ip: form.ap_ip.value,
   });
+});
+
+// -- wired ethernet, W5500 --
+
+const ETH_BETA_WARNING =
+  "The W5500 support has never been run against the hardware. It is written to " +
+  "fail safely, so a board with no adapter attached still boots and still comes " +
+  "up on WiFi, but nothing here has been observed working.\n\nEnable it anyway?";
+
+async function renderEthernet() {
+  const eth = await api("/api/ethernet");
+  const supported = eth.supported !== false;
+  document.getElementById("section-w5500").hidden = !supported;
+  document.getElementById("section-eth-address").hidden = !supported;
+  if (!supported) return;
+
+  const form = document.getElementById("w5500-form");
+  form.enabled.checked = !!eth.enabled;
+  form.cs_pin.value = eth.cs_pin;
+
+  const addr = document.getElementById("eth-address-form");
+  addr.ip_mode.value = eth.ip_mode || "dhcp";
+  addr.static_ip.value = eth.static_ip || "";
+  addr.static_netmask.value = eth.static_netmask || "255.255.255.0";
+  addr.static_gateway.value = eth.static_gateway || "";
+  addr.static_dns.value = eth.static_dns || "1.1.1.1";
+  updateEthStaticFields();
+
+  const status = eth.status || {};
+  const state = document.getElementById("eth-state");
+  if (!eth.enabled) state.textContent = "Disabled. Turn it on under Settings, Config.";
+  else if (status.link) state.textContent = "Link up at " + status.ip;
+  else state.textContent = "Enabled but no link: " + (status.reason || "no cable, or no adapter");
+}
+
+function updateEthStaticFields() {
+  const form = document.getElementById("eth-address-form");
+  document.getElementById("eth-static-fields").hidden = form.ip_mode.value !== "static";
+}
+
+document.getElementById("eth-mode").addEventListener("change", updateEthStaticFields);
+
+document.getElementById("w5500-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  // Only warn on the way in. Turning it back off needs no ceremony.
+  if (form.enabled.checked && !confirm(ETH_BETA_WARNING)) {
+    form.enabled.checked = false;
+    return;
+  }
+  await api("/api/ethernet", "POST", {
+    enabled: form.enabled.checked,
+    cs_pin: parseInt(form.cs_pin.value, 10) || 10,
+  });
+  document.getElementById("w5500-status").textContent =
+    "Saved. The interface comes up on the next reboot.";
+  renderEthernet();
+});
+
+document.getElementById("eth-address-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  await api("/api/ethernet", "POST", {
+    ip_mode: form.ip_mode.value,
+    static_ip: form.static_ip.value,
+    static_netmask: form.static_netmask.value,
+    static_gateway: form.static_gateway.value,
+    static_dns: form.static_dns.value,
+  });
+  renderEthernet();
 });
 
 // -- modules and the api key --
