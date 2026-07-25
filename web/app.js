@@ -1068,8 +1068,12 @@ function motionPad(device) {
     const x = (event.clientX - rect.left) / rect.width - 0.5;
     const y = (event.clientY - rect.top) / rect.height - 0.5;
     vector = { x: Math.max(-1, Math.min(1, x * 2)), y: Math.max(-1, Math.min(1, y * 2)) };
+    // In pixels, not percent: a percentage inside translate() resolves against
+    // the knob's own box, so the knob stopped a fifth of the way out while the
+    // rate kept climbing. The control has to show what it is doing.
+    const reach = (rect.width - knob.offsetWidth) / 2;
     knob.style.transform =
-      "translate(calc(-50% + " + vector.x * 40 + "%), calc(-50% + " + vector.y * 40 + "%))";
+      "translate(calc(-50% + " + vector.x * reach + "px), calc(-50% + " + vector.y * reach + "px))";
   };
 
   pad.addEventListener("pointerdown", (e) => {
@@ -1082,9 +1086,8 @@ function motionPad(device) {
   });
   pad.addEventListener("pointerup", stopTicking);
   pad.addEventListener("pointercancel", stopTicking);
-  pad.addEventListener("pointerleave", () => {
-    if (timer) stopTicking();
-  });
+  // No pointerleave handler: the pointer is captured, so dragging past the edge
+  // of the pad is a legitimate full deflection rather than a reason to stop.
 
   // Double-click centres, which is how you find a head that has wandered.
   pad.addEventListener("dblclick", () => {
