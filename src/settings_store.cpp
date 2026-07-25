@@ -29,7 +29,7 @@ static void seedDefault(const char* name, JsonDocument& doc) {
   } else if (strcmp(name, "api.json") == 0) {
     doc["http_api_enabled"] = true;
     doc["websocket_enabled"] = true;
-    doc["mqtt_enabled"] = true;
+    doc["mqtt_enabled"] = false;
     doc["api_key"] = "";  // minted on first boot by ModuleSettings
   } else if (strcmp(name, "system.json") == 0) {
     doc["wifi_enabled"] = true;

@@ -32,6 +32,6 @@ class ModuleSettings {
 
   bool _httpApi = true;
   bool _websocket = true;
-  bool _mqtt = true;
+  bool _mqtt = false;  // ships off: most rigs never point it at a broker
   String _apiKey;
 };

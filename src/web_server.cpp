@@ -542,6 +542,14 @@ void DmxWebServer::registerRoutes() {
     JsonDocument body;
     parseBody(body);
     _modules.setFromJson(body.as<JsonObjectConst>());
+    if (!body["mqtt_enabled"].isNull()) {
+      // mqtt.json carried its own `enabled` as well, which meant two switches
+      // for one thing and a UI showing both. The module switch is the only one
+      // now, and it writes the other so they cannot drift apart.
+      JsonDocument mirror;
+      mirror.to<JsonObject>()["enabled"] = _modules.mqttEnabled();
+      _mqtt.setConfig(mirror.as<JsonObjectConst>());
+    }
     if (_modules.mqttEnabled()) _mqtt.start();
     else _mqtt.stop();
     JsonDocument doc;

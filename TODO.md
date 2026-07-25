@@ -136,7 +136,7 @@ how many channels it is about to move.
 
 ### EZ motion
 
-- **Reverse speed**, for fixtures where 0 is fastest and 255 slowest.
+~~Reverse speed.~~ Done.
 
 ### Network
 
@@ -148,19 +148,14 @@ how many channels it is about to move.
 - Everything is centred and the cards are narrow. Pin the filter column to the
   left edge of the page instead.
 - **i18n**, one JSON per language: FR, EN, DE, ES.
-- MQTT: the Enable is duplicated. Hide it when the bridge is disabled, and ship
-  MQTT disabled by default.
+- ~~MQTT: the Enable is duplicated.~~ Done: one switch, broker settings hidden
+  while it is off, and MQTT ships disabled.
 - Prettier cards: the switch-to-lite becomes a small icon like the bin and the
   gear; EZ sliders go vertical with 0/25/50 stacked vertically on their left;
   Save look stays at the bottom.
 - Clicking a colour on the wheel takes the dimmer to full.
 - Double-click the wheel recentres it, as the joystick does.
 - **Lite cards are not to be touched.**
-
-### MQTT
-
-- Scenes must be triggerable from MQTT, so they go to Home Assistant like the
-  devices do. Groups do not need to.
 
 ### Decisions taken
 
@@ -183,6 +178,13 @@ how many channels it is about to move.
 Open question as posed: a device's config can change underneath a saved scene.
 Either it cannot be done, or every device carries a UUID and a restore that
 cannot find one asks: cancel, or continue without that device.
+
+## Batch 5.5, MQTT
+
+Moved out of batch 4: there is more to do here than one item.
+
+- Scenes must be triggerable from MQTT, so they go to Home Assistant like the
+  devices do. Groups do not need to.
 
 ## Batch 5
 

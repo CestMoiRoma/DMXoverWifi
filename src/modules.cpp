@@ -15,7 +15,7 @@ void ModuleSettings::load() {
   settings_store::load("api.json", doc);
   _httpApi = doc["http_api_enabled"] | true;
   _websocket = doc["websocket_enabled"] | true;
-  _mqtt = doc["mqtt_enabled"] | true;
+  _mqtt = doc["mqtt_enabled"] | false;
   _apiKey = (const char*)(doc["api_key"] | "");
 }
 

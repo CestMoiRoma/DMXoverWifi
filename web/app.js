@@ -714,6 +714,13 @@ const EZ_KINDS = {
         hint: "How far one arrow key press moves. Nothing to do with the stick's speed.",
       },
       {
+        key: "reverse_speed",
+        label: "Reverse the speed channel",
+        type: "checkbox",
+        default: "",
+        hint: "For fixtures where 0 is fastest and 255 slowest, which is common enough to catch you out.",
+      },
+      {
         key: "fine_mode",
         label: "What the card's Fine position does",
         type: "select",
@@ -874,10 +881,13 @@ function roleLabel(t, label, role) {
   return n > 1 ? label + " (" + n + ")" : label;
 }
 
-function roleFader(t, role, label) {
+function roleFader(t, role, label, reversed) {
   if (!t.has(role)) return null;
   const block = el("div", { class: "ez-block" });
-  const current = t.get(role);
+  // A reversed channel is flipped on the way in and on the way out, so the
+  // fader reads left to right as slow to fast whichever way the fixture counts.
+  const flip = (v) => (reversed ? 255 - v : v);
+  const current = flip(t.get(role));
 
   const head = el("div", { class: "ez-row" });
   head.appendChild(el("label", {}, [roleLabel(t, label, role)]));
@@ -890,15 +900,15 @@ function roleFader(t, role, label) {
     input.value = String(value);
     out.textContent = String(value);
   };
-  const state = { dragging: false, apply: paint };
+  const state = { dragging: false, apply: (value) => paint(flip(value)) };
   input.addEventListener("input", () => {
     state.dragging = true;
     out.textContent = input.value;
-    t.send(role, parseInt(input.value, 10), false);
+    t.send(role, flip(parseInt(input.value, 10)), false);
   });
   input.addEventListener("change", () => {
     state.dragging = false;
-    t.send(role, parseInt(input.value, 10), true);
+    t.send(role, flip(parseInt(input.value, 10)), true);
   });
   t.claim(role, state);
 
@@ -906,7 +916,7 @@ function roleFader(t, role, label) {
   block.appendChild(
     percentRow((value) => {
       paint(value);
-      t.send(role, value, true);
+      t.send(role, flip(value), true);
     })
   );
   return block;
@@ -1382,7 +1392,9 @@ function ezWidgets(t) {
   // Shared optional roles, drawn only where they were claimed.
   if (kind !== "dimmer") parts.push(roleFader(t, "dimmer", "Master dimmer"));
   if (kind !== "strobe") parts.push(roleFader(t, "strobe", "Strobe"));
-  if (kind === "motion") parts.push(roleFader(t, "speed", "Movement speed"));
+  if (kind === "motion") {
+    parts.push(roleFader(t, "speed", "Movement speed", t.setting("reverse_speed", "") === "1"));
+  }
 
   return parts.filter(Boolean);
 }
@@ -2345,7 +2357,6 @@ async function renderSettings() {
 
   const mqtt = await api("/api/mqtt");
   const mqttForm = document.getElementById("mqtt-form");
-  mqttForm.enabled.checked = !!mqtt.enabled;
   mqttForm.host.value = mqtt.host || "";
   mqttForm.port.value = mqtt.port || 1883;
   mqttForm.username.value = mqtt.username || "";
@@ -2375,6 +2386,7 @@ async function renderSettings() {
   modForm.websocket_enabled.checked = !!modules.websocket_enabled;
   modForm.mqtt_enabled.checked = !!modules.mqtt_enabled;
   document.getElementById("api-key").value = modules.api_key || "(hidden)";
+  document.getElementById("section-mqtt-broker").hidden = !modules.mqtt_enabled;
 
   const mesh = await api("/api/mesh");
   const meshForm = document.getElementById("mesh-form");
@@ -2733,6 +2745,7 @@ document.getElementById("modules-form").addEventListener("submit", async (e) => 
     websocket_enabled: form.websocket_enabled.checked,
     mqtt_enabled: form.mqtt_enabled.checked,
   });
+  document.getElementById("section-mqtt-broker").hidden = !form.mqtt_enabled.checked;
 });
 
 document.getElementById("api-key-copy").addEventListener("click", async () => {
