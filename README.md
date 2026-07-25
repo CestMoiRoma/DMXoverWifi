@@ -211,8 +211,14 @@ environment is `s2mini`.
 ### Devices
 
 Every fixture with the right control per channel, and the tools to manage them,
-on one page. Moving a fader writes the DMX buffer straight away, and the
-controls open at the values the board is actually holding rather than at zero.
+on one page. Faders are live: the DMX buffer follows them **while you drag**,
+not on release, and the controls open at the values the board is actually
+holding rather than at zero.
+
+That runs over a WebSocket on port 81 when the module is on, which also keeps
+every open browser in sync as the rig moves. With the socket off or unreachable
+the same controls fall back to plain HTTP on the same 30 ms schedule, so the
+feel is the same and only the multi-client mirroring is lost.
 
 Each card carries three icon actions in its top right corner:
 

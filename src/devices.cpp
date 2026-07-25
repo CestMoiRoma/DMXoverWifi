@@ -262,6 +262,7 @@ Channel* DeviceManager::setValue(const String& deviceId, int offset, int value) 
   for (auto& c : d->channels) {
     if (c.offset == offset) {
       _dmx.setChannel(d->addressFor(c), value);
+      if (_onValueChanged) _onValueChanged(d->id, offset, value);
       return &c;
     }
   }

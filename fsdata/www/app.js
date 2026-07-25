@@ -51,6 +51,99 @@ function iconButton(paths, title, onClick) {
   return btn;
 }
 
+// ---- live channel transport ----
+//
+// A slider dragged across its travel emits values far faster than one HTTP
+// request each can carry, so writes are coalesced per channel and flushed on a
+// short timer. The socket is preferred when it is up; when the module is off or
+// the connection drops, the exact same calls fall back to POST and nothing
+// upstream has to care which one is in use.
+
+const REALTIME_INTERVAL_MS = 30;
+
+let ws = null;
+let apiKey = null;
+let pendingValues = new Map();
+let flushTimer = null;
+let channelControls = new Map();
+
+function transportName() {
+  return ws && ws.readyState === WebSocket.OPEN ? "websocket" : "http";
+}
+
+function flushPendingValues() {
+  const items = Array.from(pendingValues.values());
+  pendingValues.clear();
+  const live = ws && ws.readyState === WebSocket.OPEN;
+  items.forEach((item) => {
+    if (live) {
+      ws.send(JSON.stringify({ t: "set", d: item.deviceId, o: item.offset, v: item.value }));
+    } else {
+      api("/api/devices/" + item.deviceId + "/channel/" + item.offset, "POST", {
+        value: item.value,
+      });
+    }
+  });
+}
+
+// Coalescing by channel means a fast drag costs one message per channel per
+// interval rather than one per pixel, and the last value always wins.
+function sendValue(deviceId, offset, value, immediate) {
+  pendingValues.set(deviceId + ":" + offset, { deviceId: deviceId, offset: offset, value: value });
+  if (immediate) {
+    if (flushTimer) {
+      clearTimeout(flushTimer);
+      flushTimer = null;
+    }
+    flushPendingValues();
+    return;
+  }
+  if (!flushTimer) {
+    flushTimer = setTimeout(() => {
+      flushTimer = null;
+      flushPendingValues();
+    }, REALTIME_INTERVAL_MS);
+  }
+}
+
+function applyRemoteValue(deviceId, offset, value) {
+  const control = channelControls.get(deviceId + ":" + offset);
+  // Skip the control currently under the pointer: overwriting it mid-drag would
+  // fight the person holding it.
+  if (!control || control.dragging) return;
+  control.apply(value);
+}
+
+function connectWebSocket() {
+  if (!boardInfo.websocket_enabled || !apiKey) return;
+  const port = boardInfo.websocket_port || 81;
+  const url = "ws://" + location.hostname + ":" + port + "/?api_key=" + encodeURIComponent(apiKey);
+  try {
+    ws = new WebSocket(url);
+  } catch (e) {
+    ws = null;
+    return;
+  }
+  ws.addEventListener("message", (event) => {
+    let frame;
+    try {
+      frame = JSON.parse(event.data);
+    } catch (e) {
+      return;
+    }
+    if (frame.t === "val") applyRemoteValue(frame.d, frame.o, frame.v);
+  });
+  ws.addEventListener("close", () => {
+    ws = null;
+    // The board reboots, the venue's AP blinks: keep trying rather than silently
+    // degrading to HTTP for the rest of the session.
+    setTimeout(connectWebSocket, 3000);
+  });
+  ws.addEventListener("error", () => {
+    if (ws) ws.close();
+  });
+}
+
 // ---- shared state ----
 
 let labelsCache = [];
@@ -177,29 +270,45 @@ function matchesFilters(device) {
 function channelControl(device, channel) {
   const row = el("div", { class: "channel-control" });
   row.appendChild(el("label", {}, [channel.name]));
-  const send = (value) =>
-    api("/api/devices/" + device.id + "/channel/" + channel.offset, "POST", { value: value });
+  const key = device.id + ":" + channel.offset;
+  const send = (value, immediate) => sendValue(device.id, channel.offset, value, immediate);
 
   const current = typeof channel.value === "number" ? channel.value : 0;
 
   if (channel.type === "slider") {
     const input = el("input", { type: "range", min: "0", max: "255", value: String(current) });
     const output = el("span", {}, [String(current)]);
+    const state = { dragging: false };
+    // "input" fires all through the drag, "change" once on release. Sending on
+    // both is what makes the fader live, with the release guaranteeing the final
+    // value lands even if it fell inside a throttle window.
     input.addEventListener("input", () => {
+      state.dragging = true;
       output.textContent = input.value;
+      send(parseInt(input.value, 10), false);
     });
-    input.addEventListener("change", () => send(parseInt(input.value, 10)));
+    input.addEventListener("change", () => {
+      state.dragging = false;
+      send(parseInt(input.value, 10), true);
+    });
+    state.apply = (value) => {
+      input.value = String(value);
+      output.textContent = String(value);
+    };
+    channelControls.set(key, state);
     row.appendChild(input);
     row.appendChild(output);
   } else if (channel.type === "button-momentary") {
     const button = el("button", { class: "channel-btn momentary" }, ["Hold"]);
+    // Press and release are single events, so they go out immediately rather
+    // than waiting on the throttle: a blackout should not be 30 ms late.
     const press = (e) => {
       if (e) e.preventDefault();
-      send(255);
+      send(255, true);
     };
     const release = (e) => {
       if (e) e.preventDefault();
-      send(0);
+      send(0, true);
     };
     button.addEventListener("mousedown", press);
     button.addEventListener("mouseup", release);
@@ -212,16 +321,20 @@ function channelControl(device, channel) {
     const button = el("button", { class: "channel-btn switch" }, [current ? "On" : "Off"]);
     let on = current > 0;
     button.classList.toggle("on", on);
-    button.addEventListener("click", () => {
-      on = !on;
+    const paint = (value) => {
+      on = value > 0;
       button.textContent = on ? "On" : "Off";
       button.classList.toggle("on", on);
-      send(on ? 255 : 0);
+    };
+    button.addEventListener("click", () => {
+      paint(on ? 0 : 255);
+      send(on ? 255 : 0, true);
     });
+    channelControls.set(key, { apply: paint });
     row.appendChild(button);
   } else {
     const button = el("button", { class: "channel-btn" }, ["Trigger"]);
-    button.addEventListener("click", () => send(255));
+    button.addEventListener("click", () => send(255, true));
     row.appendChild(button);
   }
   return row;
@@ -290,6 +403,7 @@ async function renderDevices() {
 
   const grid = document.getElementById("device-grid");
   grid.innerHTML = "";
+  channelControls.clear();  // the old controls just left the DOM
   if (devices.length === 0) {
     grid.appendChild(el("p", { class: "empty" }, ["No fixtures yet. Add one with the + button."]));
     return;
@@ -800,6 +914,10 @@ async function renderInfo() {
   document.getElementById("info-hostname").textContent = info.hostname
     ? info.hostname + ".local"
     : "not set";
+  document.getElementById("info-transport").textContent =
+    transportName() === "websocket"
+      ? "WebSocket on port " + (info.websocket_port || 81)
+      : "HTTP (the socket is off or unreachable)";
   const author = document.getElementById("info-author");
   author.innerHTML = "";
   author.appendChild(el("a", { href: info.author.url, target: "_blank" }, [info.author.name]));
@@ -821,6 +939,14 @@ async function renderInfo() {
   } catch (e) {
     boardInfo = {};
   }
+  try {
+    // The UI is exempt from the key on HTTP, but the socket asks every client
+    // for it, so fetch it here and hand it over on connect.
+    apiKey = (await api("/api/modules")).api_key || null;
+  } catch (e) {
+    apiKey = null;
+  }
+  connectWebSocket();
   // The ESP8266 backend is nailed to Serial1/GPIO2, so offering pin fields there
   // would promise something the firmware cannot honour.
   const isEsp8266 = boardInfo.board === "esp8266";

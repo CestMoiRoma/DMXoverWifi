@@ -2,6 +2,7 @@
 
 #include <ArduinoJson.h>
 
+#include <functional>
 #include <vector>
 
 #include "categories.h"
@@ -42,6 +43,14 @@ class DeviceManager {
   // Raw universe access, for callers that address DMX slots directly rather
   // than through a fixture.
   DmxDriver& dmx() { return _dmx; }
+
+  // Fires on every successful setValue, whatever drove it: HTTP, WebSocket or
+  // the serial console. The WebSocket server uses it to fan changes out, so a
+  // fader moved from one client shows up on the others without any of the
+  // callers having to know the socket exists.
+  void onValueChanged(std::function<void(const String&, int, int)> cb) {
+    _onValueChanged = std::move(cb);
+  }
 
   Device* find(const String& id);
   Device* findByName(const String& name);
@@ -91,6 +100,7 @@ class DeviceManager {
 
   DmxDriver& _dmx;
   std::vector<Device> _devices;
+  std::function<void(const String&, int, int)> _onValueChanged;
 };
 
 // Normalize an arbitrary type string to one of the four valid channel types.

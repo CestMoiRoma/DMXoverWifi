@@ -298,6 +298,10 @@ void DmxWebServer::registerRoutes() {
     // wired to Serial1/GPIO2 and the pin setting has no effect.
     doc["board"] = BOARD_NAME;
     doc["hostname"] = _wifi.hostname();
+    // Lets the UI decide between the socket and throttled HTTP without a
+    // second request, and tells it which port to knock on.
+    doc["websocket_enabled"] = _modules.websocketEnabled();
+    doc["websocket_port"] = 81;
     sendJson(200, doc);
   });
 

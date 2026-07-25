@@ -12,6 +12,7 @@
 #include "version.h"
 #include "web_server.h"
 #include "wifi_manager.h"
+#include "ws_server.h"
 
 static DmxDriver dmx;
 static DeviceManager deviceManager(dmx);
@@ -19,6 +20,7 @@ static LabelStore labelStore;
 static ModuleSettings modules;
 static WifiManager wifiManager;
 static MqttManager mqttManager(deviceManager);
+static WsServer wsServer(deviceManager, modules);
 static DmxWebServer webServer(deviceManager, labelStore, modules, wifiManager, mqttManager);
 static SerialConsole serialConsole(deviceManager, wifiManager, mqttManager);
 
@@ -59,6 +61,10 @@ void setup() {
   }
 
   webServer.begin();
+  wsServer.begin();
+  deviceManager.onValueChanged([](const String& deviceId, int offset, int value) {
+    wsServer.broadcastValue(deviceId, offset, value);
+  });
 
   if (modules.mqttEnabled() && wifiManager.mode() == "sta") {
     mqttManager.start();
@@ -68,6 +74,7 @@ void setup() {
 void loop() {
   if (!wifiManager.disabled()) {
     webServer.handleClient();
+    wsServer.loop();
     wifiManager.loop();
     if (modules.mqttEnabled()) mqttManager.loop();
   }
