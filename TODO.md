@@ -114,6 +114,77 @@ sent whole on every read.
 - **Double-click the joystick** to centre, rather than a separate button.
 - **Saved positions** are the preset mechanism above.
 
+## Batch 4
+
+### Header
+
+- **Blackout**, a red button: every channel to zero.
+- **Save-guard**: keep the channel state so a reboot or a power cut comes back
+  to the values that were live.
+
+### Scenes, a new page
+
+- The same sort and filter column as Devices.
+- **New Scene** behind the same three-way pre-popup: pick fixtures, pick
+  channels, type the values. A description field.
+- The scene card carries its name, a play button, a gear to edit and a bin.
+
+### Groups, a new page
+
+- Group channels together.
+- **New Group** behind a pre-popup: Group Lite or Group EZ.
+- Lite shows the group in the lite format; EZ in the EZ format, with the channel
+  choice laid out per fixture and picked by checkbox.
+
+### EZ motion
+
+- **Reverse speed**, for fixtures where 0 is fastest and 255 slowest.
+
+### Network
+
+- **The WiFi scan does not work.**
+
+### UI
+
+- Everything is centred and the cards are narrow. Pin the filter column to the
+  left edge of the page instead.
+- **i18n**, one JSON per language: FR, EN, DE, ES.
+- MQTT: the Enable is duplicated. Hide it when the bridge is disabled, and ship
+  MQTT disabled by default.
+- Prettier cards: the switch-to-lite becomes a small icon like the bin and the
+  gear; EZ sliders go vertical with 0/25/50 stacked vertically on their left;
+  Save look stays at the bottom.
+- Clicking a colour on the wheel takes the dimmer to full.
+- Double-click the wheel recentres it, as the joystick does.
+- **Lite cards are not to be touched.**
+
+### MQTT
+
+- Scenes must be triggerable from MQTT, so they go to Home Assistant like the
+  devices do. Groups do not need to.
+
+### Saving and restoring scenes and groups
+
+Open question as posed: a device's config can change underneath a saved scene.
+Either it cannot be done, or every device carries a UUID and a restore that
+cannot find one asks: cancel, or continue without that device.
+
+## Batch 5
+
+- **Over-the-air update**, in the spirit of ESPHome, leaving the data intact.
+- If possible, updating straight from a GitHub release, plus a CI pipeline that
+  builds the `.bin`.
+
+## Batch 6
+
+A real wiki, one Markdown file per subject: serial, websocket, HTTP, MQTT, lite
+devices, EZ devices, scenes, groups, wiring.
+
+## Batch 7
+
+Confirmation phase first, then merge to `main` and release the ESP32 binary for
+the GitHub updater.
+
 ## Loose ends
 
 - `.env` still labels the DMX pins `D4` and `D3`, left from the CircuitPython

@@ -685,6 +685,13 @@ const EZ_KINDS = {
         hint: "A small push always steps by one; this is what a full push reaches.",
       },
       {
+        key: "arrow_step",
+        label: "Keyboard arrow step",
+        type: "number",
+        default: "5",
+        hint: "How far one arrow key press moves. Nothing to do with the stick's speed.",
+      },
+      {
         key: "fine_mode",
         label: "What the card's Fine position does",
         type: "select",
@@ -1033,6 +1040,7 @@ function motionPad(device) {
   const invertHFine = ezSetting(device, "invert_h_fine", "") === "1";
   const invertVFine = ezSetting(device, "invert_v_fine", "") === "1";
   const maxStep = Math.max(1, parseInt(ezSetting(device, "max_step", "10"), 10) || 10);
+  const arrowStep = Math.max(1, parseInt(ezSetting(device, "arrow_step", "5"), 10) || 5);
   const fineOnly = ezSetting(device, "fine_mode", "both") === "fine";
   const hasFineH = ezRoleOffset(device, "horizontal_fine") !== null;
   const hasFineV = ezRoleOffset(device, "vertical_fine") !== null;
@@ -1173,16 +1181,21 @@ function motionPad(device) {
     const key = KEYS[e.key];
     if (!key) return;
     e.preventDefault();
-    // One press, one smallest step. Holding a key repeats through the browser.
-    nudgeAxis("horizontal", "horizontal_fine", hasFineH, invertHFine, (invertH ? -1 : 1) * key[0]);
-    nudgeAxis("vertical", "vertical_fine", hasFineV, invertVFine, (invertV ? -1 : 1) * key[1]);
+    // Arrows are a fixed step, not the stick's rate curve: one press is one
+    // increment of whatever the card was told, so a nudge is repeatable rather
+    // than depending on how long a finger stayed down. Holding a key repeats
+    // through the browser's own key repeat.
+    nudgeAxis("horizontal", "horizontal_fine", hasFineH, invertHFine, (invertH ? -1 : 1) * key[0] * arrowStep);
+    nudgeAxis("vertical", "vertical_fine", hasFineV, invertVFine, (invertV ? -1 : 1) * key[1] * arrowStep);
   });
 
   block.appendChild(modeRow);
   block.appendChild(pad);
   block.appendChild(
     el("p", { class: "hint" }, [
-      "Drag to move, further is faster. Double-click to centre. Arrow keys step once. " +
+      "Drag to move, further is faster. Double-click to centre. Arrow keys step by " +
+        arrowStep +
+        ". " +
         (hasAnyFine
           ? "Fine drives " + (fineOnly ? "the fine channels alone." : "movement and fine together.")
           : "No fine channels bound, so Fine is unavailable."),
