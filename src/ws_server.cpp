@@ -3,6 +3,12 @@
 void WsServer::begin() {
   if (!_modules.websocketEnabled()) return;
   _server.begin();
+  // A browser that navigates away or reloads does not always close its socket,
+  // and the library holds a small fixed number of clients. Without this, a few
+  // reloads fill the table with sockets nobody is on the other end of, and every
+  // new connection is refused with a reset. Ping every 15 s, expect a pong
+  // within 3 s, drop after two misses.
+  _server.enableHeartbeat(15000, 3000, 2);
   _server.onEvent([this](uint8_t num, WStype_t type, uint8_t* payload, size_t length) {
     onEvent(num, type, payload, length);
   });

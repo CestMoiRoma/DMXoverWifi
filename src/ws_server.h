@@ -3,6 +3,7 @@
 #include <ArduinoJson.h>
 #include <WebSocketsServer.h>
 
+#include "config.h"
 #include "devices.h"
 #include "modules.h"
 
@@ -25,7 +26,7 @@ class WsServer {
   WsServer(DeviceManager& devices, ModuleSettings& modules)
       : _devices(devices), _modules(modules), _server(WS_PORT) {}
 
-  static const uint16_t WS_PORT = 81;
+  static const uint16_t WS_PORT = WS_PORT_NUMBER;
 
   void begin();  // no-op while the module is switched off
   void loop();

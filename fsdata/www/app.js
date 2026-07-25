@@ -60,7 +60,10 @@ function iconButton(paths, title, onClick) {
 // upstream has to care which one is in use.
 
 const REALTIME_INTERVAL_MS = 30;
+const WS_RETRY_MIN_MS = 3000;
+const WS_RETRY_MAX_MS = 60000;
 
+let wsRetryDelay = WS_RETRY_MIN_MS;
 let ws = null;
 let apiKey = null;
 let pendingValues = new Map();
@@ -133,11 +136,17 @@ function connectWebSocket() {
     }
     if (frame.t === "val") applyRemoteValue(frame.d, frame.o, frame.v);
   });
+  ws.addEventListener("open", () => {
+    wsRetryDelay = WS_RETRY_MIN_MS;
+  });
   ws.addEventListener("close", () => {
     ws = null;
     // The board reboots, the venue's AP blinks: keep trying rather than silently
-    // degrading to HTTP for the rest of the session.
-    setTimeout(connectWebSocket, 3000);
+    // degrading to HTTP for the rest of the session. But back off while doing
+    // it. A fixed short retry turns a board that is refusing sockets into a
+    // connection storm, which is exactly when it can least afford one.
+    setTimeout(connectWebSocket, wsRetryDelay);
+    wsRetryDelay = Math.min(wsRetryDelay * 2, WS_RETRY_MAX_MS);
   });
   ws.addEventListener("error", () => {
     if (ws) ws.close();
@@ -934,16 +943,19 @@ async function renderInfo() {
 // ---- boot ----
 
 (async function start() {
+  // One request rather than five. The board serves a single client at a time,
+  // so every extra connection in the opening burst is another chance for one to
+  // be refused while the browser is still fetching the page's own assets.
   try {
-    boardInfo = await api("/api/info");
+    const boot = await api("/api/bootstrap");
+    boardInfo = boot;
+    // The UI is exempt from the key on HTTP, but the socket asks every client
+    // for it, so it rides along here.
+    apiKey = boot.api_key || null;
+    categoriesCache = boot.categories || [];
+    labelsCache = boot.labels || [];
   } catch (e) {
     boardInfo = {};
-  }
-  try {
-    // The UI is exempt from the key on HTTP, but the socket asks every client
-    // for it, so fetch it here and hand it over on connect.
-    apiKey = (await api("/api/modules")).api_key || null;
-  } catch (e) {
     apiKey = null;
   }
   connectWebSocket();

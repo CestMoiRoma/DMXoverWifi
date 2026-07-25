@@ -23,6 +23,11 @@
 #endif
 #define DEFAULT_DMX_DIR_PIN "IO18"
 
+// The WebSocket needs its own port: the Arduino web server cannot share 80 with
+// a socket upgrade. Both the socket and the /api/info payload read it from here
+// so the UI is never told a port the board is not on.
+#define WS_PORT_NUMBER 81
+
 // Config lives as JSON files under this LittleFS directory (written at runtime).
 // Static web assets live under /www (flashed from fsdata/ via `uploadfs`).
 #define DATA_DIR "/data"

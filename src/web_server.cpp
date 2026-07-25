@@ -35,6 +35,11 @@ bool DmxWebServer::serveFile(const char* path, const char* contentType) {
     _server.send(404, "text/plain", "not found");
     return false;
   }
+  // These assets are replaced wholesale by every uploadfs, and the board sends
+  // no validators a browser could revalidate against, so a cached copy can only
+  // ever be stale. Cheaper to refetch 10 KB over a LAN than to debug a UI
+  // running half the previous flash.
+  _server.sendHeader("Cache-Control", "no-store");
   _server.streamFile(f, contentType);
   f.close();
   return true;
@@ -101,7 +106,27 @@ void DmxWebServer::registerRoutes() {
   _server.on("/app.js", HTTP_GET, [this]() { serveFile("/www/app.js", "application/javascript"); });
   _server.on("/style.css", HTTP_GET, [this]() { serveFile("/www/style.css", "text/css"); });
   _server.on("/wiki.md", HTTP_GET, [this]() { serveFile("/www/wiki.md", "text/plain"); });
+  // Browsers ask for this unprompted. Answering 204 costs one short response
+  // instead of routing it through the 404 handler and its JSON body.
+  _server.on("/favicon.ico", HTTP_GET, [this]() { _server.send(204, "image/x-icon", ""); });
 #endif
+
+  // One request for everything the UI needs at boot. It used to make five, and
+  // on a server that handles a single client at a time, each extra connection
+  // in that opening burst is another chance for one to be refused.
+  onApi("/api/bootstrap", HTTP_GET, [this]() {
+    JsonDocument doc;
+    doc["board"] = BOARD_NAME;
+    doc["version"] = FW_VERSION;
+    doc["hostname"] = _wifi.hostname();
+    doc["websocket_enabled"] = _modules.websocketEnabled();
+    doc["websocket_port"] = WS_PORT_NUMBER;
+    if (requestFromUi()) doc["api_key"] = _modules.apiKey();
+    categoriesToJson(doc["categories"].to<JsonArray>());
+    _labels.labelsToJson(doc["labels"].to<JsonArray>());
+    _devices.devicesToJson(doc["devices"].to<JsonArray>(), true);
+    sendJson(200, doc);
+  });
 
   // -- devices --
   onApi("/api/devices", HTTP_GET, [this]() {
@@ -301,7 +326,11 @@ void DmxWebServer::registerRoutes() {
     // Lets the UI decide between the socket and throttled HTTP without a
     // second request, and tells it which port to knock on.
     doc["websocket_enabled"] = _modules.websocketEnabled();
-    doc["websocket_port"] = 81;
+    doc["websocket_port"] = WS_PORT_NUMBER;
+    // Uptime and free heap make a reboot or a slow leak visible from the
+    // outside, which guessing from a browser's error message cannot.
+    doc["uptime_ms"] = (uint32_t)millis();
+    doc["free_heap"] = (uint32_t)ESP.getFreeHeap();
     sendJson(200, doc);
   });
 
