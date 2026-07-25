@@ -21,6 +21,11 @@
 
 * { box-sizing: border-box; }
 
+/* The hidden attribute works only through the browser's own display:none, so
+   any author rule that sets display beats it. Several things here are both
+   hidden from script and laid out with flex, which silently did nothing. */
+[hidden] { display: none !important; }
+
 body {
   margin: 0;
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
