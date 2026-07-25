@@ -615,3 +615,16 @@ button.danger {
   color: #fff;
 }
 button.danger:hover { background: #b91c1c; border-color: #b91c1c; }
+
+/* -- scene and group pickers -- */
+
+.picker-block { margin-bottom: 0.9rem; }
+.picker-block h3 { margin: 0 0 0.3rem 0; font-size: 0.9rem; color: var(--muted); }
+
+.picker-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.2rem 0;
+}
+.picker-row .pick-value { width: 4.5rem; }

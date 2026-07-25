@@ -196,6 +196,13 @@ let activeFilters = new Set();
 let activeCategories = new Set();
 let searchTerm = "";
 let sortMode = "az";
+let currentView = "devices";
+let scenesCache = [];
+let groupsCache = [];
+let sceneSearch = "";
+let sceneSort = "az";
+let groupSearch = "";
+let groupSort = "az";
 let boardInfo = {};
 
 // Saves a fixture as a file the board can take back. The shape is deliberately
@@ -235,9 +242,12 @@ function switchView(name) {
   document.querySelectorAll(".nav-btn").forEach((b) => b.classList.remove("active"));
   document.getElementById("view-" + name).classList.add("active");
   document.querySelector('.nav-btn[data-view="' + name + '"]').classList.add("active");
-  // The add button belongs to the fixtures view alone.
-  document.getElementById("add-device-fab").hidden = name !== "devices";
+  // The + creates whatever the current page holds.
+  document.getElementById("add-device-fab").hidden = name === "settings";
+  currentView = name;
   if (name === "devices") renderDevices();
+  if (name === "scenes") renderScenes();
+  if (name === "groups") renderGroups();
   if (name === "settings") renderSettings();
 }
 
@@ -578,8 +588,11 @@ document.getElementById("filters-reset").addEventListener("click", () => {
 
 // On a phone the column would push the fixtures off the screen, so it folds
 // away and this opens it. On a wide screen it is simply always there.
-document.getElementById("sidebar-toggle").addEventListener("click", () => {
-  document.getElementById("device-sidebar").classList.toggle("open");
+document.querySelectorAll(".sidebar-toggle").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const sidebar = btn.parentElement.querySelector(".sidebar");
+    if (sidebar) sidebar.classList.toggle("open");
+  });
 });
 
 // ---- EZ control kinds ----
@@ -1445,6 +1458,16 @@ async function nextFreeStart() {
 }
 
 document.getElementById("add-device-fab").addEventListener("click", async () => {
+  if (currentView === "scenes") {
+    devicesCache = await api("/api/devices");
+    openSceneModal(null);
+    return;
+  }
+  if (currentView === "groups") {
+    devicesCache = await api("/api/devices");
+    document.getElementById("group-choice-modal").hidden = false;
+    return;
+  }
   labelsCache = await api("/api/labels");
   if (categoriesCache.length === 0) categoriesCache = await api("/api/categories");
   document.getElementById("choice-modal").hidden = false;
@@ -1695,6 +1718,426 @@ document.getElementById("device-form").addEventListener("submit", async (e) => {
   else await api("/api/devices", "POST", payload);
   closeDeviceModal();
   renderDevices();
+});
+
+// ---- scenes ----
+
+const ICON_PLAY = ["M8 5l11 7-11 7z"];
+
+async function renderScenes() {
+  scenesCache = await api("/api/scenes");
+  if (devicesCache.length === 0) devicesCache = await api("/api/devices");
+  redrawScenes();
+}
+
+function redrawScenes() {
+  const grid = document.getElementById("scene-grid");
+  grid.innerHTML = "";
+  let shown = scenesCache.filter((s) => {
+    if (!sceneSearch) return true;
+    return (s.name + " " + (s.description || "")).toLowerCase().indexOf(sceneSearch) !== -1;
+  });
+  shown.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+  if (sceneSort === "za") shown.reverse();
+
+  if (shown.length === 0) {
+    grid.appendChild(
+      el("p", { class: "empty" }, [
+        scenesCache.length ? "No scene matches." : "No scenes yet. Add one with the + button.",
+      ])
+    );
+    return;
+  }
+
+  shown.forEach((scene) => {
+    const card = el("div", { class: "device-card" });
+    const head = el("div", { class: "card-head" });
+    head.appendChild(
+      el("div", { class: "card-title" }, [
+        el("h3", {}, [scene.name]),
+        el("span", { class: "card-sub" }, [
+          scene.steps.length + (scene.steps.length === 1 ? " channel" : " channels"),
+        ]),
+      ])
+    );
+
+    const actions = el("div", { class: "card-actions" });
+    actions.appendChild(
+      iconButton(ICON_PLAY, "Play", async () => {
+        const res = await api("/api/scenes/" + scene.id + "/play", "POST");
+        // Say what could not be placed rather than appearing to have worked.
+        if (res.missing && res.missing.length) {
+          alert(
+            "Played, but " +
+              res.missing.length +
+              " channel(s) in this scene are not on this board. It was probably made on another rig."
+          );
+        }
+        lastLocalWrite.clear();
+        if (currentView === "devices") renderDevices();
+      })
+    );
+    actions.appendChild(iconButton(ICON_GEAR, "Edit", () => openSceneModal(scene)));
+    actions.appendChild(
+      iconButton(ICON_TRASH, "Delete", async () => {
+        if (!confirm('Delete the scene "' + scene.name + '"?')) return;
+        await api("/api/scenes/" + scene.id, "DELETE");
+        renderScenes();
+      })
+    );
+    head.appendChild(actions);
+    card.appendChild(head);
+    if (scene.description) card.appendChild(el("p", { class: "hint" }, [scene.description]));
+    grid.appendChild(card);
+  });
+}
+
+document.getElementById("scene-search").addEventListener("input", (e) => {
+  sceneSearch = e.target.value.trim().toLowerCase();
+  redrawScenes();
+});
+document.getElementById("scene-sort").addEventListener("change", (e) => {
+  sceneSort = e.target.value;
+  redrawScenes();
+});
+
+let editingSceneId = null;
+
+// One row per channel of every fixture, ticked into the scene with the value it
+// should take. `values` seeds it when editing.
+function renderChannelPicker(container, values, withValues) {
+  container.innerHTML = "";
+  if (devicesCache.length === 0) {
+    container.appendChild(el("p", { class: "hint" }, ["No fixtures yet."]));
+    return;
+  }
+  devicesCache.forEach((device) => {
+    const block = el("div", { class: "picker-block" });
+    block.appendChild(el("h3", {}, [device.name]));
+    device.channels.forEach((channel) => {
+      const row = el("div", { class: "picker-row" });
+      const box = el("input", {
+        type: "checkbox",
+        class: "pick-uid",
+        "data-uid": channel.uid,
+      });
+      const has = Object.prototype.hasOwnProperty.call(values, channel.uid);
+      box.checked = has;
+      row.appendChild(box);
+      row.appendChild(el("span", { class: "grow" }, [channel.name]));
+      if (withValues) {
+        const value = el("input", {
+          type: "number",
+          min: "0",
+          max: "255",
+          class: "pick-value",
+          value: String(has ? values[channel.uid] : channel.value || 0),
+        });
+        row.appendChild(value);
+      }
+      block.appendChild(row);
+    });
+    container.appendChild(block);
+  });
+}
+
+function openSceneModal(scene) {
+  const form = document.getElementById("scene-form");
+  editingSceneId = scene ? scene.id : null;
+  form.name.value = scene ? scene.name : "";
+  form.description.value = scene ? scene.description || "" : "";
+  const values = {};
+  if (scene) scene.steps.forEach((step) => (values[step.uid] = step.value));
+  renderChannelPicker(document.getElementById("scene-picker"), values, true);
+  document.getElementById("scene-title").textContent = scene ? "Edit scene" : "New scene";
+  document.getElementById("scene-submit").textContent = scene ? "Save changes" : "Create scene";
+  document.getElementById("scene-modal").hidden = false;
+  form.name.focus();
+}
+
+document.querySelectorAll("#scene-modal [data-close-scene]").forEach((node) => {
+  node.addEventListener("click", () => {
+    document.getElementById("scene-modal").hidden = true;
+    editingSceneId = null;
+  });
+});
+
+// Ticks every channel that is currently doing something and fills in what it is
+// doing. Building a look on the rig and then naming it beats typing numbers.
+document.getElementById("scene-capture").addEventListener("click", async () => {
+  devicesCache = await api("/api/devices");
+  const values = {};
+  devicesCache.forEach((device) => {
+    device.channels.forEach((channel) => {
+      if (channel.value) values[channel.uid] = channel.value;
+    });
+  });
+  renderChannelPicker(document.getElementById("scene-picker"), values, true);
+});
+
+document.getElementById("scene-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const steps = [];
+  document.querySelectorAll("#scene-picker .picker-row").forEach((row) => {
+    const box = row.querySelector(".pick-uid");
+    if (!box.checked) return;
+    steps.push({
+      uid: box.dataset.uid,
+      value: parseInt(row.querySelector(".pick-value").value, 10) || 0,
+    });
+  });
+  const payload = { name: form.name.value, description: form.description.value, steps: steps };
+  if (editingSceneId) await api("/api/scenes/" + editingSceneId, "PUT", payload);
+  else await api("/api/scenes", "POST", payload);
+  document.getElementById("scene-modal").hidden = true;
+  editingSceneId = null;
+  renderScenes();
+});
+
+// ---- groups ----
+
+async function renderGroups() {
+  groupsCache = await api("/api/groups");
+  if (devicesCache.length === 0) devicesCache = await api("/api/devices");
+  if (categoriesCache.length === 0) categoriesCache = await api("/api/categories");
+  redrawGroups();
+}
+
+function groupChannelName(uid) {
+  for (const device of devicesCache) {
+    const channel = (device.channels || []).find((c) => c.uid === uid);
+    if (channel) return device.name + " / " + channel.name;
+  }
+  return "(missing)";
+}
+
+function redrawGroups() {
+  const grid = document.getElementById("group-grid");
+  grid.innerHTML = "";
+  let shown = groupsCache.filter(
+    (g) => !groupSearch || g.name.toLowerCase().indexOf(groupSearch) !== -1
+  );
+  shown.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+  if (groupSort === "za") shown.reverse();
+
+  if (shown.length === 0) {
+    grid.appendChild(
+      el("p", { class: "empty" }, [
+        groupsCache.length ? "No group matches." : "No groups yet. Add one with the + button.",
+      ])
+    );
+    return;
+  }
+
+  shown.forEach((group) => {
+    const card = el("div", { class: "device-card" });
+    const head = el("div", { class: "card-head" });
+    const count =
+      group.card === "ez"
+        ? Object.keys(group.roles || {}).length + " roles"
+        : (group.members || []).length + " channels";
+    head.appendChild(
+      el("div", { class: "card-title" }, [
+        el("h3", {}, [group.name]),
+        el("span", { class: "card-sub" }, [(group.card === "ez" ? "EZ, " : "Lite, ") + count]),
+      ])
+    );
+    const actions = el("div", { class: "card-actions" });
+    actions.appendChild(iconButton(ICON_GEAR, "Edit", () => openGroupModal(group, group.card)));
+    actions.appendChild(
+      iconButton(ICON_TRASH, "Delete", async () => {
+        if (!confirm('Delete the group "' + group.name + '"?')) return;
+        await api("/api/groups/" + group.id, "DELETE");
+        renderGroups();
+      })
+    );
+    head.appendChild(actions);
+    card.appendChild(head);
+
+    const send = (role, value) =>
+      api("/api/groups/" + group.id + "/apply", "POST", { role: role, value: value });
+
+    if (group.card === "ez") {
+      Object.keys(group.roles || {}).forEach((role) => {
+        card.appendChild(groupFader(role, (group.roles[role] || []).length, (v) => send(role, v)));
+      });
+    } else {
+      card.appendChild(groupFader("All", (group.members || []).length, (v) => send("", v)));
+      const list = (group.members || []).map(groupChannelName).join(", ");
+      card.appendChild(el("p", { class: "hint" }, [list]));
+    }
+    grid.appendChild(card);
+  });
+}
+
+// A group control says how many channels it is about to move. A widget that
+// silently drives eight fixtures is a trap.
+function groupFader(label, count, onSend) {
+  const block = el("div", { class: "ez-block" });
+  const row = el("div", { class: "ez-row" });
+  row.appendChild(el("label", {}, [label + " (" + count + ")"]));
+  const input = el("input", { type: "range", min: "0", max: "255", value: "0" });
+  const out = el("span", { class: "ez-readout" }, ["0"]);
+  input.addEventListener("input", () => {
+    out.textContent = input.value;
+    onSend(parseInt(input.value, 10));
+  });
+  row.appendChild(input);
+  row.appendChild(out);
+  block.appendChild(row);
+  block.appendChild(
+    percentRow((value) => {
+      input.value = String(value);
+      out.textContent = String(value);
+      onSend(value);
+    })
+  );
+  return block;
+}
+
+document.getElementById("group-search").addEventListener("input", (e) => {
+  groupSearch = e.target.value.trim().toLowerCase();
+  redrawGroups();
+});
+document.getElementById("group-sort").addEventListener("change", (e) => {
+  groupSort = e.target.value;
+  redrawGroups();
+});
+
+document.querySelectorAll("#group-choice-modal [data-close-group-choice]").forEach((node) => {
+  node.addEventListener("click", () => {
+    document.getElementById("group-choice-modal").hidden = true;
+  });
+});
+document.getElementById("choice-group-lite").addEventListener("click", () => {
+  document.getElementById("group-choice-modal").hidden = true;
+  openGroupModal(null, "lite");
+});
+document.getElementById("choice-group-ez").addEventListener("click", () => {
+  document.getElementById("group-choice-modal").hidden = true;
+  openGroupModal(null, "ez");
+});
+
+let editingGroupId = null;
+let editingGroupCard = "lite";
+
+function openGroupModal(group, card) {
+  const form = document.getElementById("group-form");
+  editingGroupId = group ? group.id : null;
+  editingGroupCard = card || "lite";
+  form.name.value = group ? group.name : "";
+
+  const kindField = document.getElementById("group-kind-field");
+  kindField.hidden = editingGroupCard !== "ez";
+  if (editingGroupCard === "ez") {
+    const select = document.getElementById("group-kind");
+    select.innerHTML = "";
+    Object.keys(EZ_KINDS).forEach((key) =>
+      select.appendChild(el("option", { value: key }, [EZ_KINDS[key].label]))
+    );
+    select.value = (group && group.kind) || "rgb";
+  }
+
+  renderGroupPicker(group);
+  document.getElementById("group-title").textContent = group ? "Edit group" : "New group";
+  document.getElementById("group-submit").textContent = group ? "Save changes" : "Create group";
+  document.getElementById("group-error").hidden = true;
+  document.getElementById("group-modal").hidden = false;
+  form.name.focus();
+}
+
+document.getElementById("group-kind").addEventListener("change", () => renderGroupPicker(null));
+
+function renderGroupPicker(group) {
+  const box = document.getElementById("group-picker");
+  const title = document.getElementById("group-picker-title");
+  box.innerHTML = "";
+
+  if (editingGroupCard !== "ez") {
+    title.textContent = "Channels driven together";
+    const values = {};
+    ((group && group.members) || []).forEach((uid) => (values[uid] = 0));
+    renderChannelPicker(box, values, false);
+    return;
+  }
+
+  // One picker per role: a role takes a set of channels, which is what lets one
+  // wheel drive the reds of a whole bar.
+  const kind = document.getElementById("group-kind").value;
+  title.textContent = "Channels for each role";
+  EZ_KINDS[kind].roles.forEach((role) => {
+    const section = el("div", { class: "picker-block" });
+    section.appendChild(
+      el("h3", {}, [role.label, role.required ? "" : el("span", { class: "hint" }, ["optional"])])
+    );
+    const chosen = ((group && group.roles && group.roles[role.key]) || []).slice();
+    devicesCache.forEach((device) => {
+      device.channels.forEach((channel) => {
+        const row = el("div", { class: "picker-row" });
+        const cb = el("input", {
+          type: "checkbox",
+          class: "pick-role",
+          "data-role": role.key,
+          "data-uid": channel.uid,
+        });
+        cb.checked = chosen.indexOf(channel.uid) !== -1;
+        row.appendChild(cb);
+        row.appendChild(el("span", { class: "grow" }, [device.name + " / " + channel.name]));
+        section.appendChild(row);
+      });
+    });
+    box.appendChild(section);
+  });
+}
+
+document.getElementById("group-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const errorBox = document.getElementById("group-error");
+  const payload = { name: form.name.value, card: editingGroupCard };
+
+  if (editingGroupCard === "ez") {
+    payload.kind = document.getElementById("group-kind").value;
+    const roles = {};
+    document.querySelectorAll("#group-picker .pick-role").forEach((cb) => {
+      if (!cb.checked) return;
+      (roles[cb.dataset.role] = roles[cb.dataset.role] || []).push(cb.dataset.uid);
+    });
+    const required = EZ_KINDS[payload.kind].roles.filter((r) => r.required).map((r) => r.key);
+    const empty = required.filter((key) => !roles[key]);
+    if (empty.length) {
+      errorBox.textContent = "These roles need at least one channel: " + empty.join(", ") + ".";
+      errorBox.hidden = false;
+      return;
+    }
+    payload.roles = roles;
+  } else {
+    const members = [];
+    document.querySelectorAll("#group-picker .pick-uid").forEach((cb) => {
+      if (cb.checked) members.push(cb.dataset.uid);
+    });
+    if (members.length === 0) {
+      errorBox.textContent = "Pick at least one channel.";
+      errorBox.hidden = false;
+      return;
+    }
+    payload.members = members;
+  }
+
+  errorBox.hidden = true;
+  if (editingGroupId) await api("/api/groups/" + editingGroupId, "PUT", payload);
+  else await api("/api/groups", "POST", payload);
+  document.getElementById("group-modal").hidden = true;
+  editingGroupId = null;
+  renderGroups();
+});
+
+document.querySelectorAll("#group-modal [data-close-group]").forEach((node) => {
+  node.addEventListener("click", () => {
+    document.getElementById("group-modal").hidden = true;
+    editingGroupId = null;
+  });
 });
 
 // ---- settings ----

@@ -11,6 +11,8 @@
   <h1>DMX over WiFi</h1>
   <nav>
     <button data-view="devices" class="nav-btn active">Devices</button>
+    <button data-view="scenes" class="nav-btn">Scenes</button>
+    <button data-view="groups" class="nav-btn">Groups</button>
     <button data-view="settings" class="nav-btn">Settings</button>
     <button type="button" id="blackout-btn" class="danger" title="Every channel to zero">
       Blackout
@@ -21,7 +23,7 @@
 <main>
   <!-- Fixtures and their live controls, one merged view. -->
   <section id="view-devices" class="view active">
-    <button type="button" id="sidebar-toggle" class="secondary small">Sort and filter</button>
+    <button type="button" id="sidebar-toggle" class="secondary small sidebar-toggle">Sort and filter</button>
     <div class="devices-layout">
       <aside id="device-sidebar" class="sidebar">
         <div class="sidebar-block">
@@ -55,6 +57,46 @@
       </aside>
 
       <div id="device-grid" class="device-grid"></div>
+    </div>
+  </section>
+
+  <section id="view-scenes" class="view">
+    <button type="button" class="secondary small sidebar-toggle">Sort and filter</button>
+    <div class="devices-layout">
+      <aside class="sidebar">
+        <div class="sidebar-block">
+          <label class="sidebar-label" for="scene-search">Search</label>
+          <input type="search" id="scene-search" placeholder="Name or description">
+        </div>
+        <div class="sidebar-block">
+          <span class="sidebar-label">Order</span>
+          <select id="scene-sort">
+            <option value="az">Name, A to Z</option>
+            <option value="za">Name, Z to A</option>
+          </select>
+        </div>
+      </aside>
+      <div id="scene-grid" class="device-grid"></div>
+    </div>
+  </section>
+
+  <section id="view-groups" class="view">
+    <button type="button" class="secondary small sidebar-toggle">Sort and filter</button>
+    <div class="devices-layout">
+      <aside class="sidebar">
+        <div class="sidebar-block">
+          <label class="sidebar-label" for="group-search">Search</label>
+          <input type="search" id="group-search" placeholder="Name">
+        </div>
+        <div class="sidebar-block">
+          <span class="sidebar-label">Order</span>
+          <select id="group-sort">
+            <option value="az">Name, A to Z</option>
+            <option value="za">Name, Z to A</option>
+          </select>
+        </div>
+      </aside>
+      <div id="group-grid" class="device-grid"></div>
     </div>
   </section>
 
@@ -435,6 +477,100 @@
   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
   <span class="fab-label">New device</span>
 </button>
+
+<!-- Scene creation and editing. -->
+<div id="scene-modal" class="modal" hidden>
+  <div class="modal-backdrop" data-close-scene></div>
+  <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="scene-title">
+    <div class="modal-head">
+      <h2 id="scene-title">New scene</h2>
+      <button type="button" class="icon-btn" data-close-scene aria-label="Close">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <form id="scene-form" class="form-stacked">
+      <div class="field">
+        <label for="scene-name">Name</label>
+        <input type="text" id="scene-name" name="name" required>
+      </div>
+      <div class="field">
+        <label for="scene-desc">Description</label>
+        <input type="text" id="scene-desc" name="description">
+      </div>
+      <div class="channels-block">
+        <div class="channels-block-header">
+          <span>Channels in this scene</span>
+          <button type="button" id="scene-capture" class="secondary small">Capture the live look</button>
+        </div>
+        <p class="hint">
+          Tick what the scene should set. Capture fills every value from what the
+          rig is doing right now, which is usually how a look gets made.
+        </p>
+        <div id="scene-picker"></div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="secondary" data-close-scene>Cancel</button>
+        <button type="submit" id="scene-submit">Create scene</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Which kind of group. -->
+<div id="group-choice-modal" class="modal" hidden>
+  <div class="modal-backdrop" data-close-group-choice></div>
+  <div class="modal-box narrow" role="dialog" aria-modal="true">
+    <div class="modal-head">
+      <h2>New group</h2>
+      <button type="button" class="icon-btn" data-close-group-choice aria-label="Close">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="choice-list">
+      <button type="button" class="choice" id="choice-group-lite">
+        <strong>Group Lite</strong>
+        <span>One fader writing the same value to every channel you tick.</span>
+      </button>
+      <button type="button" class="choice" id="choice-group-ez">
+        <strong>Group EZ</strong>
+        <span>An EZ widget where each role takes a set of channels, so one wheel
+          drives the reds of the whole bar.</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Group creation and editing. -->
+<div id="group-modal" class="modal" hidden>
+  <div class="modal-backdrop" data-close-group></div>
+  <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="group-title">
+    <div class="modal-head">
+      <h2 id="group-title">New group</h2>
+      <button type="button" class="icon-btn" data-close-group aria-label="Close">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <form id="group-form" class="form-stacked">
+      <div class="field">
+        <label for="group-name">Name</label>
+        <input type="text" id="group-name" name="name" required>
+      </div>
+      <div class="field" id="group-kind-field" hidden>
+        <label for="group-kind">Control type</label>
+        <select id="group-kind" name="kind"></select>
+      </div>
+      <div class="channels-block">
+        <div class="channels-block-header"><span id="group-picker-title">Channels</span></div>
+        <div id="group-picker"></div>
+      </div>
+      <p id="group-error" class="form-error" hidden></p>
+      <div class="form-actions">
+        <button type="button" class="secondary" data-close-group>Cancel</button>
+        <button type="submit" id="group-submit">Create group</button>
+      </div>
+    </form>
+  </div>
+</div>
 
 <!-- What the + button opens: three ways to get a fixture. -->
 <div id="choice-modal" class="modal" hidden>

@@ -124,17 +124,15 @@ sent whole on every read.
 
 ### Scenes, a new page
 
-- The same sort and filter column as Devices.
-- **New Scene** behind the same three-way pre-popup: pick fixtures, pick
-  channels, type the values. A description field.
-- The scene card carries its name, a play button, a gear to edit and a bin.
+~~Done.~~ Plus a "capture the live look" button, which fills every value from
+what the rig is currently doing: building a look on the rig and then naming it
+beats typing numbers into a form.
 
 ### Groups, a new page
 
-- Group channels together.
-- **New Group** behind a pre-popup: Group Lite or Group EZ.
-- Lite shows the group in the lite format; EZ in the EZ format, with the channel
-  choice laid out per fixture and picked by checkbox.
+~~Done.~~ A lite group is one fader writing the same value to every channel it
+holds; an EZ group gives each role a set of channels. Every group control states
+how many channels it is about to move.
 
 ### EZ motion
 
