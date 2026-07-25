@@ -5,6 +5,7 @@
 #include "devices.h"
 #include "dmx/dmx_driver.h"
 #include "labels.h"
+#include "modules.h"
 #include "mqtt_manager.h"
 #include "serial_console.h"
 #include "settings_store.h"
@@ -15,9 +16,10 @@
 static DmxDriver dmx;
 static DeviceManager deviceManager(dmx);
 static LabelStore labelStore;
+static ModuleSettings modules;
 static WifiManager wifiManager;
 static MqttManager mqttManager(deviceManager);
-static DmxWebServer webServer(deviceManager, labelStore, wifiManager, mqttManager);
+static DmxWebServer webServer(deviceManager, labelStore, modules, wifiManager, mqttManager);
 static SerialConsole serialConsole(deviceManager, wifiManager, mqttManager);
 
 void setup() {
@@ -37,9 +39,18 @@ void setup() {
 
   deviceManager.begin();
   labelStore.begin();
+  modules.begin();
+  serialConsole.begin();
+
+  // WiFi off means USB-only control: no radio, no web server, no MQTT. The
+  // serial console stays the whole interface, which is the point.
+  if (!(sys["wifi_enabled"] | true)) {
+    wifiManager.setDisabled();
+    return;
+  }
+
   wifiManager.begin();
   mqttManager.begin();
-  serialConsole.begin();
 
   // Join a known network, or fall back to the config hotspot.
   if (!wifiManager.connectKnown()) {
@@ -49,15 +60,17 @@ void setup() {
 
   webServer.begin();
 
-  if (wifiManager.mode() == "sta") {
+  if (modules.mqttEnabled() && wifiManager.mode() == "sta") {
     mqttManager.start();
   }
 }
 
 void loop() {
-  webServer.handleClient();
-  wifiManager.loop();
-  mqttManager.loop();
+  if (!wifiManager.disabled()) {
+    webServer.handleClient();
+    wifiManager.loop();
+    if (modules.mqttEnabled()) mqttManager.loop();
+  }
   dmx.refreshIfDue();
   serialConsole.poll();
 }

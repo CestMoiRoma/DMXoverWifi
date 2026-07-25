@@ -9,6 +9,10 @@ static const char* HELP_LINES[] = {
     "Set-System dir-pin enable=<true|false> [pin=<pin>] - MAX485 DE/RE pin, disabled by default"
     " (tie DE+RE to VCC and leave disabled if that's your wiring) (reboot to apply)",
     "Set-System hotspot name=<name> passwd=<password>   - AP ssid/password (reboot to apply)",
+    "Set-System wifi-toggle on|off                      - off is USB-only: no radio, no web UI,"
+    " no MQTT (reboot to apply)",
+    "Set-Value channel=<ch> [device=<name>] value=<0-255> - drive a channel",
+    "Set-Value address=<1-512> value=<0-255>            - drive a raw DMX slot",
     "Set-System mesh role=<none|parent|child> [ssid=<>] [passwd=<>] - WIP, stored only, no effect yet",
     "Set-System wifi-add ssid=<ssid> passwd=<password> [priority=<n>] - same as Add-Wifi",
     "Set-System wifi-del ssid=<ssid>                    - remove a saved network",
@@ -200,6 +204,21 @@ void SerialConsole::cmdSetSystem(const String& rest) {
     bool en = cfg["dmx_dir_pin_enabled"] | false;
     emit(String("dir pin ") + (en ? "enabled" : "disabled") + " (pin=" +
          (const char*)(cfg["dmx_dir_pin"] | "") + ") (reboot to apply)");
+
+  } else if (sub == "wifi-toggle") {
+    String state = a.has("wifi-toggle") ? a.get("wifi-toggle") : "";
+    if (!state.length() && !a.bare.empty()) state = a.bare[0];
+    if (!state.length()) {
+      fail("on or off required, e.g. Set-System wifi-toggle off");
+      return;
+    }
+    JsonDocument cfg;
+    settings_store::load("system.json", cfg);
+    bool on = truthy(state);
+    cfg["wifi_enabled"] = on;
+    settings_store::save("system.json", cfg);
+    emit(String("wifi ") + (on ? "enabled" : "disabled") +
+         " (reboot to apply; off means USB-only, no web UI and no MQTT)");
 
   } else if (sub == "hotspot") {
     JsonDocument cfg;
@@ -431,6 +450,52 @@ void SerialConsole::cmdGetStatus(const String& rest) {
 
 // ---- misc top-level ----
 
+// Set-Value channel=<name> [device=<name>] value=<0-255>
+// Set-Value address=<1-512> value=<0-255>
+//
+// The console could read a channel but never write one, which made USB-only
+// control impossible. `address=` bypasses the fixture model and pokes a raw DMX
+// slot, which is what the binary protocol and a probe both want.
+void SerialConsole::cmdSetValue(const String& rest) {
+  ParsedArgs a = tokenize(rest);
+  if (!a.has("value")) {
+    fail("value required, e.g. Set-Value channel=Red value=255");
+    return;
+  }
+  int value = a.get("value").toInt();
+  if (value < 0) value = 0;
+  if (value > 255) value = 255;
+
+  if (a.has("address")) {
+    int address = a.get("address").toInt();
+    if (address < 1 || address > 512) {
+      fail("address must be 1-512");
+      return;
+    }
+    _devices.dmx().setChannel(address, value);
+    emit("dmx " + String(address) + " = " + String(value));
+    return;
+  }
+
+  String name = a.get("channel");
+  if (!name.length()) {
+    fail("channel= or address= required");
+    return;
+  }
+  String devFilter = a.get("device");
+  bool any = false;
+  for (Device& d : _devices.devices()) {
+    if (devFilter.length() && d.name != devFilter) continue;
+    for (const Channel& c : d.channels) {
+      if (c.name != name) continue;
+      any = true;
+      _devices.setValue(d.id, c.offset, value);
+      emit(d.name + "/" + c.name + " = " + String(value) + " (dmx " + String(d.addressFor(c)) + ")");
+    }
+  }
+  if (!any) fail("no channel named '" + name + "'");
+}
+
 void SerialConsole::cmdHelp() {
   for (const char* line : HELP_LINES) emit(line);
 }
@@ -472,6 +537,8 @@ void SerialConsole::handleLine(const String& line) {
     cmdSetSystem(rest);
   } else if (cmd == "set-device") {
     cmdSetDevice(rest);
+  } else if (cmd == "set-value") {
+    cmdSetValue(rest);
   } else if (cmd == "get-status") {
     cmdGetStatus(rest);
   } else if (cmd == "help") {

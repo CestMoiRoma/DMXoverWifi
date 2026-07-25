@@ -30,6 +30,7 @@ MANAGED = (
     "mqtt.json",
     "system.json",
     "mesh.json",
+    "api.json",
     "labels.json",
     "devices.json",
 )
@@ -104,17 +105,35 @@ def mqtt_from_env(cfg):
 
 
 SYSTEM_KEYS = (
+    "WIFI_ENABLED",
     "DMX_TX_PIN", "DMX_DIR_PIN_ENABLED", "DMX_DIR_PIN",
     "HOSTNAME", "AP_SSID", "AP_PASSWORD", "AP_IP",
     "STA_IP_MODE", "STA_STATIC_IP", "STA_STATIC_NETMASK",
     "STA_STATIC_GATEWAY", "STA_STATIC_DNS",
 )
 
+API_KEYS = ("API_HTTP_ENABLED", "API_WEBSOCKET_ENABLED", "API_MQTT_ENABLED")
+
+
+def api_from_env(cfg):
+    """Module switches for api.json. The API key itself is never seeded: the
+    board mints its own on first boot, and putting one in .env would ship the
+    same key to every board flashed from this checkout."""
+    if not any(k in cfg for k in API_KEYS):
+        return None
+    return {
+        "http_api_enabled": as_bool(cfg.get("API_HTTP_ENABLED"), True),
+        "websocket_enabled": as_bool(cfg.get("API_WEBSOCKET_ENABLED"), True),
+        "mqtt_enabled": as_bool(cfg.get("API_MQTT_ENABLED"), True),
+        "api_key": "",
+    }
+
 
 def system_from_env(cfg, default_tx_pin):
     if not any(k in cfg for k in SYSTEM_KEYS):
         return None
     return {
+        "wifi_enabled": as_bool(cfg.get("WIFI_ENABLED"), True),
         "dmx_tx_pin": cfg.get("DMX_TX_PIN", default_tx_pin),
         "dmx_dir_pin_enabled": as_bool(cfg.get("DMX_DIR_PIN_ENABLED"), False),
         "dmx_dir_pin": cfg.get("DMX_DIR_PIN", "IO18"),
@@ -267,6 +286,7 @@ def main():
         "mqtt.json": mqtt_from_env(cfg),
         "system.json": system_from_env(cfg, default_tx_pin),
         "mesh.json": mesh_from_env(cfg),
+        "api.json": api_from_env(cfg),
         "labels.json": labels,
         "devices.json": devices_from_env(cfg, labels),
     }

@@ -37,6 +37,10 @@ class DeviceManager {
 
   std::vector<Device>& devices() { return _devices; }
 
+  // Raw universe access, for callers that address DMX slots directly rather
+  // than through a fixture.
+  DmxDriver& dmx() { return _dmx; }
+
   Device* find(const String& id);
   Device* findByName(const String& name);
   int nextFreeStartChannel();

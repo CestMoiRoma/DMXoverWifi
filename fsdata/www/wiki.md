@@ -12,6 +12,7 @@ first-time setup.
   - [Command reference](#command-reference)
 - [Channel types](#channel-types)
 - [Labels](#labels)
+- [API access control](#api-access-control)
 - [HTTP API](#http-api)
 - [MQTT and Home Assistant](#mqtt-and-home-assistant)
 - [Timing and latency](#timing-and-latency)
@@ -137,6 +138,27 @@ Defaults are SSID `ESP-DMX`, password `DMX4ALL1`, address `1.1.1.1`. The hotspot
 starts automatically whenever no saved network can be joined, so the UI stays
 reachable with no infrastructure around.
 
+#### USB-only mode
+
+| Command | What it does |
+|---|---|
+| `Set-System wifi-toggle on\|off` | Turns the radio on or off for the next boot |
+
+With WiFi off the board never brings the radio up, and the web server, mDNS and
+MQTT never start with it. The serial console becomes the entire interface, which
+is the point: a rig driven from a laptop over USB has no reason to broadcast.
+Turn it back on from the console, or set `WIFI_ENABLED` in `.env` and reflash.
+
+#### Driving channels
+
+| Command | What it does |
+|---|---|
+| `Set-Value channel=<name> [device=<name>] value=<0-255>` | Drives every channel with that name, or only the one on the named fixture |
+| `Set-Value address=<1-512> value=<0-255>` | Writes a raw DMX slot, bypassing the fixture model |
+
+`address=` is the probe form: it answers "which slot does this projector
+actually listen on" without needing a fixture defined first.
+
 #### Fixtures and channels
 
 | Command | What it does |
@@ -226,6 +248,30 @@ is meant to stay readable: `LABEL_1_NAME` declares one, and `DEVICE_1_LABELS`
 takes a comma-separated list of those names. A name matching no label is dropped
 rather than invented, so a typo shows up as a missing chip.
 
+## API access control
+
+The served web UI is trusted and needs no key. Every other caller of `/api/*`
+needs two things: the **HTTP API module** switched on, and a valid key in an
+`X-API-Key` header or an `api_key` query parameter.
+
+| Caller | HTTP API on | HTTP API off |
+|---|---|---|
+| The UI served by the board | allowed | allowed |
+| Anything else, with the right key | allowed | `403` |
+| Anything else, wrong or missing key | `401` | `403` |
+
+"The UI" means a request whose `Origin` or `Referer` points back at this board.
+Browsers set those and will not let a page forge them, so it does keep a random
+web page from driving your rig. It is **not** a defence against a hand-rolled
+client: `curl` sets any header it likes. Treat the key, not the origin check, as
+the thing actually gating scripted access, and treat the whole arrangement as
+suited to a trusted LAN rather than the open internet.
+
+The key is 64 hex characters, minted on first boot and stored in `api.json`. It
+is never seeded from `.env`, so flashing one checkout onto several boards does
+not give them all the same key. Regenerating it from **Settings**, **API**
+immediately invalidates the old one.
+
 ## HTTP API
 
 Served on port 80 alongside the UI. JSON in, JSON out. There is no
@@ -277,6 +323,9 @@ MQTT. Values are clamped to 0 through 255. A missing `value` is treated as 0.
 | `POST` | `/api/labels` | `{"name":…, "color":…}`, returns the created label |
 | `PUT` | `/api/labels/<label_id>` | Any of `name`, `color`, returns the updated label or `404` |
 | `DELETE` | `/api/labels/<label_id>` | Removes it and strips it from every fixture that carried it |
+| `GET` and `POST` | `/api/modules` | Read or merge the module switches. `GET` also returns `api_key`, but only to the UI |
+| `POST` | `/api/modules/key` | Mints a fresh API key and returns it, revoking the old one |
+| `POST` | `/api/reboot` | Answers, then restarts the board |
 | `GET` | `/api/config` | The whole live config as a `.json` download |
 | `POST` | `/api/config` | Restores a config file. Sections absent from the body are left alone |
 | `GET` | `/api/export-env` | The board's whole live config as a `.env` file, served as a download |

@@ -209,7 +209,11 @@ void WifiManager::startAp(const String& ssid, const String& password, const Stri
 
 void WifiManager::statusToJson(JsonObject out) const {
   if (_hostname.length()) out["hostname"] = _hostname;
-  if (_mode == "sta") {
+  if (_disabled) {
+    out["mode"] = "off";
+    out["ssid"] = nullptr;
+    out["ip"] = nullptr;
+  } else if (_mode == "sta") {
     out["mode"] = "sta";
     out["ssid"] = WiFi.SSID();
     out["ip"] = WiFi.localIP().toString();

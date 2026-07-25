@@ -40,9 +40,56 @@ bool DmxWebServer::serveFile(const char* path, const char* contentType) {
   return true;
 }
 
+// ---- access control ----
+//
+// The served UI is trusted, everything else needs the API key and the HTTP API
+// module switched on. "The UI" means a request whose Origin or Referer points
+// back at this board, which a browser sets and will not let a page forge. It is
+// not a defence against a hand-rolled client: curl sets any header it likes.
+// That is the usual bargain for a device on a trusted LAN, and the key is what
+// actually gates scripted access.
+
+bool DmxWebServer::requestFromUi() {
+  String host = _server.hostHeader();
+  if (!host.length()) return false;
+  String probe = _server.header("Origin");
+  if (!probe.length()) probe = _server.header("Referer");
+  if (!probe.length()) return false;
+  int scheme = probe.indexOf("://");
+  if (scheme >= 0) probe = probe.substring(scheme + 3);
+  int slash = probe.indexOf('/');
+  if (slash >= 0) probe = probe.substring(0, slash);
+  return probe == host;
+}
+
+bool DmxWebServer::apiAllowed() {
+  if (requestFromUi()) return true;
+  if (!_modules.httpApiEnabled()) {
+    sendError(403, "http api is disabled");
+    return false;
+  }
+  String key = _server.header("X-API-Key");
+  if (!key.length()) key = _server.arg("api_key");
+  if (!_modules.keyMatches(key)) {
+    sendError(401, "missing or invalid api key");
+    return false;
+  }
+  return true;
+}
+
+void DmxWebServer::onApi(const Uri& uri, HTTPMethod method, std::function<void()> handler) {
+  _server.on(uri, method, [this, handler]() {
+    if (!apiAllowed()) return;
+    handler();
+  });
+}
+
 // ---- lifecycle ----
 
 void DmxWebServer::begin() {
+  // hostHeader() comes for free; these do not.
+  const char* wanted[] = {"Origin", "Referer", "X-API-Key"};
+  _server.collectHeaders(wanted, 3);
   registerRoutes();
   _server.begin();
 }
@@ -57,12 +104,12 @@ void DmxWebServer::registerRoutes() {
 #endif
 
   // -- devices --
-  _server.on("/api/devices", HTTP_GET, [this]() {
+  onApi("/api/devices", HTTP_GET, [this]() {
     JsonDocument doc;
     _devices.devicesToJson(doc.to<JsonArray>(), true);
     sendJson(200, doc);
   });
-  _server.on("/api/devices", HTTP_POST, [this]() {
+  onApi("/api/devices", HTTP_POST, [this]() {
     JsonDocument body;
     parseBody(body);
     Device* d = _devices.addDevice(body["name"] | "", body["start_channel"] | 1,
@@ -73,7 +120,7 @@ void DmxWebServer::registerRoutes() {
     _devices.deviceToJson(*d, out.to<JsonObject>(), true);
     sendJson(200, out);
   });
-  _server.on(UriBraces("/api/devices/{}"), HTTP_PUT, [this]() {
+  onApi(UriBraces("/api/devices/{}"), HTTP_PUT, [this]() {
     JsonDocument body;
     parseBody(body);
     Device* d = _devices.updateDevice(_server.pathArg(0), body.as<JsonObjectConst>());
@@ -86,13 +133,13 @@ void DmxWebServer::registerRoutes() {
     _devices.deviceToJson(*d, out.to<JsonObject>(), true);
     sendJson(200, out);
   });
-  _server.on(UriBraces("/api/devices/{}"), HTTP_DELETE, [this]() {
+  onApi(UriBraces("/api/devices/{}"), HTTP_DELETE, [this]() {
     bool ok = _devices.removeDevice(_server.pathArg(0));
     JsonDocument out;
     out["ok"] = ok;
     sendJson(200, out);
   });
-  _server.on(UriBraces("/api/devices/{}/channel/{}"), HTTP_POST, [this]() {
+  onApi(UriBraces("/api/devices/{}/channel/{}"), HTTP_POST, [this]() {
     String id = _server.pathArg(0);
     int offset = _server.pathArg(1).toInt();
     JsonDocument body;
@@ -110,12 +157,12 @@ void DmxWebServer::registerRoutes() {
   });
 
   // -- labels --
-  _server.on("/api/labels", HTTP_GET, [this]() {
+  onApi("/api/labels", HTTP_GET, [this]() {
     JsonDocument doc;
     _labels.labelsToJson(doc.to<JsonArray>());
     sendJson(200, doc);
   });
-  _server.on("/api/labels", HTTP_POST, [this]() {
+  onApi("/api/labels", HTTP_POST, [this]() {
     JsonDocument body;
     parseBody(body);
     Label* l = _labels.add(body["name"] | "", body["color"] | "");
@@ -123,7 +170,7 @@ void DmxWebServer::registerRoutes() {
     _labels.labelToJson(*l, out.to<JsonObject>());
     sendJson(200, out);
   });
-  _server.on(UriBraces("/api/labels/{}"), HTTP_PUT, [this]() {
+  onApi(UriBraces("/api/labels/{}"), HTTP_PUT, [this]() {
     JsonDocument body;
     parseBody(body);
     Label* l = _labels.update(_server.pathArg(0), body.as<JsonObjectConst>());
@@ -135,7 +182,7 @@ void DmxWebServer::registerRoutes() {
     _labels.labelToJson(*l, out.to<JsonObject>());
     sendJson(200, out);
   });
-  _server.on(UriBraces("/api/labels/{}"), HTTP_DELETE, [this]() {
+  onApi(UriBraces("/api/labels/{}"), HTTP_DELETE, [this]() {
     String id = _server.pathArg(0);
     bool ok = _labels.remove(id);
     // A fixture holding a dangling id would keep filtering under a chip that no
@@ -147,12 +194,12 @@ void DmxWebServer::registerRoutes() {
   });
 
   // -- wifi --
-  _server.on("/api/wifi", HTTP_GET, [this]() {
+  onApi("/api/wifi", HTTP_GET, [this]() {
     JsonDocument doc;
     _wifi.networksToJson(doc.to<JsonArray>());
     sendJson(200, doc);
   });
-  _server.on("/api/wifi", HTTP_POST, [this]() {
+  onApi("/api/wifi", HTTP_POST, [this]() {
     JsonDocument body;
     parseBody(body);
     _wifi.addNetwork(body["ssid"] | "", body["password"] | "", body["priority"] | 0);
@@ -160,12 +207,12 @@ void DmxWebServer::registerRoutes() {
     _wifi.networksToJson(doc.to<JsonArray>());
     sendJson(200, doc);
   });
-  _server.on("/api/wifi/scan", HTTP_GET, [this]() {
+  onApi("/api/wifi/scan", HTTP_GET, [this]() {
     JsonDocument doc;
     _wifi.scan(doc.to<JsonArray>());
     sendJson(200, doc);
   });
-  _server.on(UriBraces("/api/wifi/{}"), HTTP_DELETE, [this]() {
+  onApi(UriBraces("/api/wifi/{}"), HTTP_DELETE, [this]() {
     _wifi.removeNetwork(_server.pathArg(0));
     JsonDocument doc;
     _wifi.networksToJson(doc.to<JsonArray>());
@@ -173,28 +220,28 @@ void DmxWebServer::registerRoutes() {
   });
 
   // -- mqtt --
-  _server.on("/api/mqtt", HTTP_GET, [this]() {
+  onApi("/api/mqtt", HTTP_GET, [this]() {
     JsonDocument doc;
     _mqtt.copyConfigTo(doc.to<JsonObject>());
     sendJson(200, doc);
   });
-  _server.on("/api/mqtt", HTTP_POST, [this]() {
+  onApi("/api/mqtt", HTTP_POST, [this]() {
     JsonDocument body;
     parseBody(body);
     _mqtt.setConfig(body.as<JsonObjectConst>());
-    _mqtt.start();
+    if (_modules.mqttEnabled()) _mqtt.start();
     JsonDocument doc;
     _mqtt.copyConfigTo(doc.to<JsonObject>());
     sendJson(200, doc);
   });
 
   // -- system --
-  _server.on("/api/system", HTTP_GET, [this]() {
+  onApi("/api/system", HTTP_GET, [this]() {
     JsonDocument doc;
     settings_store::load("system.json", doc);
     sendJson(200, doc);
   });
-  _server.on("/api/system", HTTP_POST, [this]() {
+  onApi("/api/system", HTTP_POST, [this]() {
     JsonDocument body;
     parseBody(body);
     JsonDocument cfg;
@@ -205,12 +252,12 @@ void DmxWebServer::registerRoutes() {
   });
 
   // -- mesh (WIP, stored only) --
-  _server.on("/api/mesh", HTTP_GET, [this]() {
+  onApi("/api/mesh", HTTP_GET, [this]() {
     JsonDocument doc;
     settings_store::load("mesh.json", doc);
     sendJson(200, doc);
   });
-  _server.on("/api/mesh", HTTP_POST, [this]() {
+  onApi("/api/mesh", HTTP_POST, [this]() {
     JsonDocument body;
     parseBody(body);
     JsonDocument cfg;
@@ -221,7 +268,7 @@ void DmxWebServer::registerRoutes() {
   });
 
   // -- info --
-  _server.on("/api/info", HTTP_GET, [this]() {
+  onApi("/api/info", HTTP_GET, [this]() {
     JsonDocument doc;
     doc["version"] = FW_VERSION;
     JsonObject author = doc["author"].to<JsonObject>();
@@ -238,13 +285,49 @@ void DmxWebServer::registerRoutes() {
   });
 
   // -- export current config as downloadable .env --
-  _server.on("/api/export-env", HTTP_GET, [this]() {
+  onApi("/api/export-env", HTTP_GET, [this]() {
     _server.sendHeader("Content-Disposition", "attachment; filename=config.env");
     _server.send(200, "text/plain", buildEnvText());
   });
 
+  // -- module switches and the api key --
+  onApi("/api/modules", HTTP_GET, [this]() {
+    JsonDocument doc;
+    _modules.toJson(doc.to<JsonObject>());
+    // The key itself only goes out to the UI: an external caller already has it
+    // if it got this far, and a disabled-API caller must not be handed one.
+    if (requestFromUi()) doc["api_key"] = _modules.apiKey();
+    sendJson(200, doc);
+  });
+  onApi("/api/modules", HTTP_POST, [this]() {
+    JsonDocument body;
+    parseBody(body);
+    _modules.setFromJson(body.as<JsonObjectConst>());
+    if (_modules.mqttEnabled()) _mqtt.start();
+    else _mqtt.stop();
+    JsonDocument doc;
+    _modules.toJson(doc.to<JsonObject>());
+    if (requestFromUi()) doc["api_key"] = _modules.apiKey();
+    sendJson(200, doc);
+  });
+  onApi("/api/modules/key", HTTP_POST, [this]() {
+    JsonDocument doc;
+    doc["api_key"] = _modules.regenerateKey();
+    sendJson(200, doc);
+  });
+
+  // -- reboot --
+  onApi("/api/reboot", HTTP_POST, [this]() {
+    JsonDocument doc;
+    doc["ok"] = true;
+    sendJson(200, doc);
+    // Let the response drain before pulling the rug out.
+    delay(200);
+    ESP.restart();
+  });
+
   // -- whole config as .json, and restoring one --
-  _server.on("/api/config", HTTP_GET, [this]() {
+  onApi("/api/config", HTTP_GET, [this]() {
     JsonDocument doc;
     buildConfigJson(doc);
     _server.sendHeader("Content-Disposition", "attachment; filename=config.json");
@@ -252,7 +335,7 @@ void DmxWebServer::registerRoutes() {
     serializeJson(doc, out);
     _server.send(200, "application/json", out);
   });
-  _server.on("/api/config", HTTP_POST, [this]() {
+  onApi("/api/config", HTTP_POST, [this]() {
     JsonDocument body;
     parseBody(body);
     if (!body.is<JsonObject>()) {
@@ -287,6 +370,9 @@ void DmxWebServer::buildConfigJson(JsonDocument& out) {
   out["board"] = BOARD_NAME;
   copySection(out, "system", "system.json");
   copySection(out, "mesh", "mesh.json");
+  // Includes the API key, so a restore clones the board faithfully. Treat the
+  // file as a secret: it already carries every WiFi and MQTT password.
+  copySection(out, "api", "api.json");
   _wifi.networksToJson(out["wifi_networks"].to<JsonArray>());
   _mqtt.copyConfigTo(out["mqtt"].to<JsonObject>());
   _labels.labelsToJson(out["labels"].to<JsonArray>());
@@ -305,6 +391,10 @@ static void mergeSection(JsonObjectConst in, const char* file) {
 void DmxWebServer::applyConfigJson(JsonObjectConst in) {
   if (in["system"].is<JsonObjectConst>()) mergeSection(in["system"].as<JsonObjectConst>(), "system.json");
   if (in["mesh"].is<JsonObjectConst>()) mergeSection(in["mesh"].as<JsonObjectConst>(), "mesh.json");
+  if (in["api"].is<JsonObjectConst>()) {
+    mergeSection(in["api"].as<JsonObjectConst>(), "api.json");
+    _modules.begin();  // re-read, keeping any key the file carried
+  }
 
   if (in["wifi_networks"].is<JsonArrayConst>()) {
     JsonDocument nets;

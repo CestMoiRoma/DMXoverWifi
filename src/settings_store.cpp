@@ -25,7 +25,13 @@ static void seedDefault(const char* name, JsonDocument& doc) {
     doc["password"] = "";
     doc["base_topic"] = "dmxwifi";
     doc["discovery_prefix"] = "homeassistant";
+  } else if (strcmp(name, "api.json") == 0) {
+    doc["http_api_enabled"] = true;
+    doc["websocket_enabled"] = true;
+    doc["mqtt_enabled"] = true;
+    doc["api_key"] = "";  // minted on first boot by ModuleSettings
   } else if (strcmp(name, "system.json") == 0) {
+    doc["wifi_enabled"] = true;
     doc["dmx_tx_pin"] = DEFAULT_DMX_TX_PIN;
     doc["dmx_dir_pin_enabled"] = false;
     doc["dmx_dir_pin"] = DEFAULT_DMX_DIR_PIN;

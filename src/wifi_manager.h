@@ -31,6 +31,11 @@ class WifiManager {
   // so this is a no-op there.
   void loop();
 
+  // USB-only mode: the radio was never brought up, so the main loop skips the
+  // web server, mDNS and MQTT entirely.
+  void setDisabled() { _disabled = true; }
+  bool disabled() const { return _disabled; }
+
   void statusToJson(JsonObject out) const;
   const String& mode() const { return _mode; }
   const String& hostname() const { return _hostname; }
@@ -47,4 +52,5 @@ class WifiManager {
   String _mode;    // "" | "sta" | "ap"
   String _apSsid;
   String _hostname;
+  bool _disabled = false;
 };

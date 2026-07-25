@@ -40,6 +40,7 @@ class SerialConsole {
   // top-level
   void cmdSetSystem(const String& rest);
   void cmdSetDevice(const String& rest);
+  void cmdSetValue(const String& rest);
   void cmdGetStatus(const String& rest);
   void cmdHelp();
   void cmdReboot();

@@ -10,8 +10,11 @@ using WebServerClass = ESP8266WebServer;
 using WebServerClass = WebServer;
 #endif
 
+#include <functional>
+
 #include "devices.h"
 #include "labels.h"
+#include "modules.h"
 #include "mqtt_manager.h"
 #include "wifi_manager.h"
 
@@ -20,14 +23,22 @@ using WebServerClass = WebServer;
 // from the main loop, mirroring the CircuitPython poll model.
 class DmxWebServer {
  public:
-  DmxWebServer(DeviceManager& devices, LabelStore& labels, WifiManager& wifi, MqttManager& mqtt)
-      : _devices(devices), _labels(labels), _wifi(wifi), _mqtt(mqtt), _server(80) {}
+  DmxWebServer(DeviceManager& devices, LabelStore& labels, ModuleSettings& modules,
+               WifiManager& wifi, MqttManager& mqtt)
+      : _devices(devices), _labels(labels), _modules(modules), _wifi(wifi), _mqtt(mqtt),
+        _server(80) {}
 
   void begin();
   void handleClient() { _server.handleClient(); }
 
  private:
   void registerRoutes();
+
+  // Registers an /api route behind the access check, so the rule lives in one
+  // place instead of at the top of two dozen handlers.
+  void onApi(const Uri& uri, HTTPMethod method, std::function<void()> handler);
+  bool apiAllowed();
+  bool requestFromUi();
 
   // helpers
   void parseBody(JsonDocument& doc);
@@ -42,6 +53,7 @@ class DmxWebServer {
 
   DeviceManager& _devices;
   LabelStore& _labels;
+  ModuleSettings& _modules;
   WifiManager& _wifi;
   MqttManager& _mqtt;
   WebServerClass _server;
