@@ -647,6 +647,17 @@ for example `pio run -e s2mini`, rather than mixing artifacts.
 The assets were not flashed. Run `pio run -e <env> -t uploadfs` to write the
 `fsdata/www/` LittleFS image. A firmware upload alone does not include them.
 
+**The page loads unstyled, and the stylesheet request shows a connection reset**
+It should no longer be possible: `/` is sent as one chunked response with
+`style.css` and `app.js` spliced in where their tags sit, so the UI arrives over
+a single connection and there is no separate request left to lose. The board
+answers one client at a time, and a subresource that lost that race used to take
+the styling of the whole page with it.
+
+The `/style.css` and `/app.js` routes still exist for fetching either file
+directly while debugging, but nothing the UI does depends on them. Edit the
+files as before; the splice happens at send time, not at build time.
+
 **Serial port opens but nothing answers**
 The console is silent by design: it prints no banner, no prompt and no boot log,
 and only ever replies to a command. Send `Help` and press Enter before
