@@ -93,6 +93,10 @@ function flushPendingValues() {
 // Coalescing by channel means a fast drag costs one message per channel per
 // interval rather than one per pixel, and the last value always wins.
 function sendValue(deviceId, offset, value, immediate) {
+  // Write through immediately, whatever the throttle then does with the wire
+  // traffic. A widget that reads the value back must see what it just asked
+  // for, not what the last fetch happened to contain.
+  cacheChannelValue(deviceId, offset, value);
   pendingValues.set(deviceId + ":" + offset, { deviceId: deviceId, offset: offset, value: value });
   if (immediate) {
     if (flushTimer) {
@@ -110,7 +114,21 @@ function sendValue(deviceId, offset, value, immediate) {
   }
 }
 
+// Keeps the fetched fixture list in step with what has actually been sent.
+//
+// Widgets that read a channel back need this. The colour wheel places its
+// marker from the current values, and the joystick adds its step to them, so
+// against a cache that never moved the marker snapped home on every echo and
+// the joystick could never get past one step from where it started.
+function cacheChannelValue(deviceId, offset, value) {
+  const device = devicesCache.find((d) => d.id === deviceId);
+  if (!device) return;
+  const channel = (device.channels || []).find((c) => c.offset === offset);
+  if (channel) channel.value = value;
+}
+
 function applyRemoteValue(deviceId, offset, value) {
+  cacheChannelValue(deviceId, offset, value);
   const control = channelControls.get(deviceId + ":" + offset);
   // Skip the control currently under the pointer: overwriting it mid-drag would
   // fight the person holding it.
