@@ -217,7 +217,14 @@ writes the DMX buffer straight away.
 
 ### Device Manager
 
-Create, inspect and delete fixtures. Channels take an offset, a name and a type.
+Create, inspect, edit, duplicate and delete fixtures. Channels take an offset, a
+name and a type.
+
+**Edit** loads a fixture back into the form and saves over it. **Duplicate**
+loads a copy into the form instead, leaving the original untouched until you
+press Create, and preselects the first start channel past the end of the source
+so the copy does not fight it for the same DMX addresses. Both are handy for a
+rig of identical fixtures: build one, duplicate it, move the start channel.
 
 ![Device Manager page](docs/images/ui-devices.png)
 

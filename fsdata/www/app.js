@@ -250,19 +250,20 @@ document.getElementById("mesh-form").addEventListener("submit", async (e) => {
 
 // ---- device manager view ----
 
-function addChannelRow(offset) {
+function addChannelRow(offset, name, type) {
   const rows = document.getElementById("channel-rows");
   const row = el("div", { class: "channel-row" });
   row.appendChild(
     el("input", { type: "number", placeholder: "Offset", value: String(offset), min: "1", class: "ch-offset" })
   );
-  row.appendChild(el("input", { type: "text", placeholder: "Name", class: "ch-name" }));
+  row.appendChild(el("input", { type: "text", placeholder: "Name", value: name || "", class: "ch-name" }));
   const select = el("select", { class: "ch-type" }, [
     el("option", { value: "slider" }, ["Slider"]),
     el("option", { value: "button" }, ["Button (trigger)"]),
     el("option", { value: "button-momentary" }, ["Button (momentary)"]),
     el("option", { value: "button-switch" }, ["Button (switch)"]),
   ]);
+  select.value = type || "slider";
   row.appendChild(select);
   const removeBtn = el("button", { type: "button", class: "secondary" }, ["Remove"]);
   removeBtn.addEventListener("click", () => row.remove());
@@ -275,6 +276,37 @@ document.getElementById("add-channel-row").addEventListener("click", () => {
   addChannelRow(count + 1);
 });
 
+// The one form does triple duty. `editingDeviceId` holds the device being
+// edited, or null when the form creates a new one, which is also the mode
+// Duplicate lands in: it prefills from an existing device but still POSTs.
+let editingDeviceId = null;
+
+function resetDeviceForm() {
+  editingDeviceId = null;
+  document.getElementById("device-form").reset();
+  document.getElementById("channel-rows").innerHTML = "";
+  document.getElementById("device-form-title").textContent = "New device";
+  document.getElementById("device-submit").textContent = "Create device";
+  document.getElementById("device-cancel").hidden = true;
+}
+
+// Load a device into the form. Pass its id to edit it in place, or null to
+// prefill a new one from it.
+function loadDeviceIntoForm(device, id, startChannel) {
+  const form = document.getElementById("device-form");
+  editingDeviceId = id;
+  form.name.value = device.name;
+  form.start_channel.value = startChannel;
+  document.getElementById("channel-rows").innerHTML = "";
+  device.channels.forEach((c) => addChannelRow(c.offset, c.name, c.type));
+  document.getElementById("device-form-title").textContent = id ? "Edit device" : "New device";
+  document.getElementById("device-submit").textContent = id ? "Save changes" : "Create device";
+  document.getElementById("device-cancel").hidden = false;
+  form.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+document.getElementById("device-cancel").addEventListener("click", resetDeviceForm);
+
 document.getElementById("device-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const form = e.target;
@@ -286,13 +318,14 @@ document.getElementById("device-form").addEventListener("submit", async (e) => {
       type: row.querySelector(".ch-type").value,
     });
   });
-  await api("/api/devices", "POST", {
+  const payload = {
     name: form.name.value,
     start_channel: parseInt(form.start_channel.value, 10),
     channels: channels,
-  });
-  form.reset();
-  document.getElementById("channel-rows").innerHTML = "";
+  };
+  if (editingDeviceId) await api("/api/devices/" + editingDeviceId, "PUT", payload);
+  else await api("/api/devices", "POST", payload);
+  resetDeviceForm();
   renderDevices();
 });
 
@@ -311,12 +344,28 @@ async function renderDevices() {
         ])
       );
     });
+    const edit = el("button", { class: "secondary" }, ["Edit"]);
+    edit.addEventListener("click", () => {
+      loadDeviceIntoForm(device, device.id, device.start_channel);
+    });
+
+    // A copy on the same start channel would fight the original for the same
+    // DMX addresses, so offer the first slot past the end of this one.
+    const duplicate = el("button", { class: "secondary" }, ["Duplicate"]);
+    duplicate.addEventListener("click", () => {
+      const span = device.channels.reduce((max, c) => Math.max(max, c.offset), 1);
+      const next = Math.min(device.start_channel + span, 512);
+      loadDeviceIntoForm({ name: device.name + " copy", channels: device.channels }, null, next);
+    });
+
     const del = el("button", { class: "secondary" }, ["Delete device"]);
     del.addEventListener("click", async () => {
       await api("/api/devices/" + device.id, "DELETE");
+      if (editingDeviceId === device.id) resetDeviceForm();
       renderDevices();
     });
-    card.appendChild(del);
+
+    card.appendChild(el("div", { class: "card-actions" }, [edit, duplicate, del]));
     list.appendChild(card);
   });
 }

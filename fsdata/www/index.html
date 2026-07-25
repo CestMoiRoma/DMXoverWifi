@@ -27,7 +27,7 @@
     </div>
 
     <div class="section">
-      <h2>New device</h2>
+      <h2 id="device-form-title">New device</h2>
       <form id="device-form" class="form-stacked">
         <div class="field">
           <label for="device-name">Name</label>
@@ -45,7 +45,8 @@
           <div id="channel-rows"></div>
         </div>
         <div class="form-actions">
-          <button type="submit">Create device</button>
+          <button type="button" id="device-cancel" class="secondary" hidden>Cancel</button>
+          <button type="submit" id="device-submit">Create device</button>
         </div>
       </form>
     </div>

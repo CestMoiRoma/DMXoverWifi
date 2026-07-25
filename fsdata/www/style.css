@@ -88,6 +88,13 @@ main { padding: 1.25rem; max-width: 640px; margin: 0 auto; }
 
 .device-card h3 { margin: 0 0 0.75rem 0; font-size: 1rem; }
 
+.card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
 .channel-control {
   display: grid;
   grid-template-columns: minmax(6rem, 1fr) 2fr auto;
