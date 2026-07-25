@@ -230,6 +230,29 @@ void DmxWebServer::registerRoutes() {
     sendJson(200, out);
   });
 
+  // Everything to zero, in one request rather than a loop of writes from a
+  // browser that might not finish it.
+  onApi("/api/blackout", HTTP_POST, [this]() {
+    _devices.allOff();
+    JsonDocument out;
+    out["ok"] = true;
+    sendJson(200, out);
+  });
+
+  // Drives a channel by its uid, which is how a scene applies itself without
+  // caring where the channel currently sits.
+  onApi(UriBraces("/api/channel/{}"), HTTP_POST, [this]() {
+    JsonDocument body;
+    parseBody(body);
+    if (!_devices.setValueByUid(_server.pathArg(0), body["value"] | 0)) {
+      sendError(404, "no channel with that uid");
+      return;
+    }
+    JsonDocument out;
+    out["ok"] = true;
+    sendJson(200, out);
+  });
+
   // -- labels --
   onApi("/api/labels", HTTP_GET, [this]() {
     JsonDocument doc;

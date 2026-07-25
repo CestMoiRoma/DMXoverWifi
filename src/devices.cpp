@@ -18,6 +18,12 @@ String normalizeChannelType(const String& value) {
 
 static Channel channelFromJson(JsonObjectConst c) {
   Channel ch;
+  // Kept when the caller sends one back, minted when it does not. That is what
+  // lets the editor rewrite a fixture's whole channel list without cutting the
+  // scenes and groups that point into it: the UI returns each channel's uid
+  // along with its edits, and only a genuinely new channel gets a new one.
+  ch.uid = (const char*)(c["uid"] | "");
+  if (!ch.uid.length()) ch.uid = makeId("ch");
   ch.offset = c["offset"] | 1;
   ch.name = (const char*)(c["name"] | "Channel");
   ch.type = normalizeChannelType(String((const char*)(c["type"] | "slider")));
@@ -116,6 +122,7 @@ void DeviceManager::deviceToJson(const Device& d, JsonObject out, bool withValue
   JsonArray chans = out["channels"].to<JsonArray>();
   for (const Channel& c : d.channels) {
     JsonObject co = chans.add<JsonObject>();
+    co["uid"] = c.uid;
     co["offset"] = c.offset;
     co["name"] = c.name;
     co["type"] = c.type;
@@ -216,6 +223,42 @@ Device* DeviceManager::updateDevice(const String& id, JsonObjectConst data) {
   if (data["ez"].is<JsonObjectConst>()) d->ez = ezFromJson(data["ez"].as<JsonObjectConst>());
   save();
   return d;
+}
+
+bool DeviceManager::findByChannelUid(const String& uid, Device*& deviceOut, Channel*& channelOut) {
+  if (!uid.length()) return false;
+  for (Device& d : _devices) {
+    for (Channel& c : d.channels) {
+      if (c.uid == uid) {
+        deviceOut = &d;
+        channelOut = &c;
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+bool DeviceManager::setValueByUid(const String& uid, int value) {
+  Device* d = nullptr;
+  Channel* c = nullptr;
+  if (!findByChannelUid(uid, d, c)) return false;
+  return setValue(d->id, c->offset, value) != nullptr;
+}
+
+void DeviceManager::allOff() {
+  // Straight at the universe rather than fixture by fixture, so a channel that
+  // no fixture claims goes dark too. A blackout that leaves a stray slot lit is
+  // not a blackout.
+  for (uint16_t address = 1; address <= DmxDriver::DMX_CHANNELS; address++) {
+    _dmx.setChannel(address, 0);
+  }
+  // Tell the world once per fixture channel, so open browsers repaint.
+  if (_onValueChanged) {
+    for (const Device& d : _devices) {
+      for (const Channel& c : d.channels) _onValueChanged(d.id, c.offset, 0);
+    }
+  }
 }
 
 bool DeviceManager::startBurst(const String& deviceId, int offset, int value, uint32_t ms) {

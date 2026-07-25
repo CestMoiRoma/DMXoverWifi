@@ -228,6 +228,11 @@ def devices_from_env(cfg, labels):
         for i, channel_key in enumerate(channel_keys, start=1):
             channel = channel_groups[channel_key]
             channels.append({
+                # Derived from the group numbers rather than random, so the same
+                # .env always yields the same uid. Scenes and groups point at
+                # channels by uid, and a reflash that reissued them would cut
+                # every one of those references.
+                "uid": "ch-env%s-%s" % (dev_n, channel_key[1]),
                 "offset": as_int(channel.get("offset", i), i),
                 "name": channel.get("name", "Channel %d" % i),
                 "type": channel.get("type", "slider"),

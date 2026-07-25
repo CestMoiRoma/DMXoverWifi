@@ -164,6 +164,22 @@ sent whole on every read.
 - Scenes must be triggerable from MQTT, so they go to Home Assistant like the
   devices do. Groups do not need to.
 
+### Decisions taken
+
+- **Blackout is a dry zero.** One press, every channel to nought, nothing
+  remembered. No latch, no restore.
+- **All four languages ride inside the page.** They are inlined at build time,
+  so switching is instant and offline and the page stays one request. Costs
+  roughly 3 KB gzipped on a 29 KB page.
+- **A group is a chosen set of channels**, ticked per fixture and driven
+  together, not a set of whole fixtures.
+- **Every device and every channel carries a stable uid.** Scenes and groups
+  reference channels by uid, so a fixture being readdressed, reordered or edited
+  does not disturb them: the scene looks the channel up rather than remembering
+  where it sat. The same applies to saving and restoring groups. The "cancel or
+  continue without this device" prompt is then only needed for a file brought in
+  from another board, where a uid genuinely does not exist here.
+
 ### Saving and restoring scenes and groups
 
 Open question as posed: a device's config can change underneath a saved scene.

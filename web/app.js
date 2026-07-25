@@ -245,6 +245,15 @@ document.querySelectorAll(".nav-btn").forEach((btn) => {
   btn.addEventListener("click", () => switchView(btn.dataset.view));
 });
 
+// A dry zero: nothing is remembered and nothing comes back. Deliberately not
+// behind a confirmation, since the whole point of a panic button is that it
+// works on the first press.
+document.getElementById("blackout-btn").addEventListener("click", async () => {
+  await api("/api/blackout", "POST");
+  lastLocalWrite.clear();  // the board's own echo should be believed now
+  renderDevices();
+});
+
 function switchPanel(name) {
   document.querySelectorAll(".panel").forEach((p) => p.classList.remove("active"));
   document.querySelectorAll(".subnav-btn").forEach((b) => b.classList.remove("active"));
@@ -1283,9 +1292,12 @@ function ezCardBody(device) {
 let editingDeviceId = null;
 let modalLabels = new Set();
 
-function addChannelRow(offset, name, type) {
+function addChannelRow(offset, name, type, uid) {
   const rows = document.getElementById("channel-rows");
   const row = el("div", { class: "channel-row" });
+  // Carried through the editor untouched. Scenes and groups point at channels
+  // by uid, so rewriting the list must not reissue them.
+  if (uid) row.dataset.uid = uid;
   row.appendChild(
     el("input", { type: "number", placeholder: "Offset", value: String(offset), min: "1", class: "ch-offset" })
   );
@@ -1349,7 +1361,7 @@ function openDeviceModal(device, id) {
   renderCategorySelect(device && device.category);
   modalLabels = new Set((device && device.labels) || []);
   document.getElementById("channel-rows").innerHTML = "";
-  if (device) device.channels.forEach((c) => addChannelRow(c.offset, c.name, c.type));
+  if (device) device.channels.forEach((c) => addChannelRow(c.offset, c.name, c.type, c.uid));
   renderModalLabelPicker();
   document.getElementById("device-form-title").textContent = id ? "Edit device" : "New device";
   document.getElementById("device-submit").textContent = id ? "Save changes" : "Create device";
@@ -1627,13 +1639,20 @@ document.getElementById("ez-form").addEventListener("submit", async (e) => {
   // An EZ fixture is a normal fixture underneath: one plain channel per bound
   // role, so MQTT, the serial console and the lite view all keep working
   // against it without knowing what a colour wheel is.
+  // Rebuilt from the roles, but an offset that already existed keeps its uid,
+  // so editing an EZ fixture does not cut the scenes pointing into it.
+  const existing = editingEzId
+    ? (devicesCache.find((d) => d.id === editingEzId) || {}).channels || []
+    : [];
   const channels = spec.roles
     .filter((role) => collected.roles[role.key])
-    .map((role) => ({
-      offset: collected.roles[role.key],
-      name: role.label,
-      type: "slider",
-    }));
+    .map((role) => {
+      const offset = collected.roles[role.key];
+      const previous = existing.find((c) => c.offset === offset);
+      const channel = { offset: offset, name: role.label, type: "slider" };
+      if (previous && previous.uid) channel.uid = previous.uid;
+      return channel;
+    });
 
   const payload = {
     name: form.name.value,
@@ -1657,11 +1676,13 @@ document.getElementById("device-form").addEventListener("submit", async (e) => {
   const form = e.target;
   const channels = [];
   document.querySelectorAll("#channel-rows .channel-row").forEach((row) => {
-    channels.push({
+    const channel = {
       offset: parseInt(row.querySelector(".ch-offset").value, 10),
       name: row.querySelector(".ch-name").value || "Channel",
       type: row.querySelector(".ch-type").value,
-    });
+    };
+    if (row.dataset.uid) channel.uid = row.dataset.uid;
+    channels.push(channel);
   });
   const payload = {
     name: form.name.value,

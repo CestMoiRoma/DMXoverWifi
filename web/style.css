@@ -605,3 +605,13 @@ form { margin: 0; }
 .seg:last-child { border-radius: 0 6px 6px 0; border-left: none; }
 .seg.on { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
 .seg:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* The blackout button. Red, always reachable, and pushed to the far side of the
+   header so a panic press cannot land on a navigation button by mistake. */
+button.danger {
+  margin-left: auto;
+  background: #dc2626;
+  border-color: #dc2626;
+  color: #fff;
+}
+button.danger:hover { background: #b91c1c; border-color: #b91c1c; }

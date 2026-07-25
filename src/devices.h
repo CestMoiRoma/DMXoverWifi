@@ -11,7 +11,14 @@
 
 // A single DMX control within a fixture. `type` is one of:
 //   "slider" | "button" | "button-momentary" | "button-switch"
+//
+// `uid` is stable for the life of the channel and is how scenes and groups
+// refer to it. They deliberately do not store a fixture and an offset: those
+// change when a rig is readdressed or a fixture is edited, and a scene that
+// remembered a position would quietly point at the wrong lamp afterwards. A
+// scene looks the channel up instead, and either finds it or says so.
 struct Channel {
+  String uid;
   int offset = 1;
   String name = "Channel";
   String type = "slider";
@@ -121,6 +128,17 @@ class DeviceManager {
   // channel or nullptr if not found.
   Channel* setValue(const String& deviceId, int offset, int value);
   uint8_t getValue(const Device& d, const Channel& c) const;
+
+  // Resolves a channel uid to the fixture holding it. Returns false when the
+  // uid is unknown here, which is how a scene brought in from another board
+  // reports what it could not place instead of silently dropping it.
+  bool findByChannelUid(const String& uid, Device*& deviceOut, Channel*& channelOut);
+  // Drives a channel by uid. Returns false if nothing carries that uid.
+  bool setValueByUid(const String& uid, int value);
+
+  // Everything to zero. The blackout button, and worth having as one call
+  // rather than a loop of writes from the browser.
+  void allOff();
 
   // Drives a channel for a fixed time, then puts it back to zero. The timer
   // lives here rather than in the browser on purpose: a smoke machine opened by
