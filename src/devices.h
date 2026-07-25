@@ -3,6 +3,7 @@
 #include <ArduinoJson.h>
 
 #include <functional>
+#include <utility>
 #include <vector>
 
 #include "categories.h"
@@ -16,6 +17,19 @@ struct Channel {
   String type = "slider";
 };
 
+// Binds channels to the roles an EZ card understands, for example which offset
+// is red and which is the master dimmer. The firmware stores and echoes this
+// without interpreting it: the UI decides what a colour wheel does with the
+// roles, while the board keeps dealing in plain channels so MQTT, the serial
+// console and the raw API carry on working unchanged.
+struct EzConfig {
+  String kind;  // "" for none, else mono, rgb, rgbw, cwww, smoke, motion
+  String mode;  // smoke: "onoff" or "slider"
+  std::vector<std::pair<String, int>> roles;  // role name -> channel offset
+
+  bool empty() const { return kind.length() == 0; }
+};
+
 // A named group of channels mapped onto a contiguous DMX address range starting
 // at start_channel. `labels` holds LabelStore ids, and a fixture may carry
 // several so it can match more than one filter chip.
@@ -23,9 +37,11 @@ struct Device {
   String id;
   String name = "Device";
   String category = "other";  // one of categories.h, chosen at creation
+  String card = "lite";       // "lite" is one control per channel, "ez" a widget
   int start_channel = 1;
   std::vector<Channel> channels;
   std::vector<String> labels;
+  EzConfig ez;
 
   int addressFor(const Channel& c) const { return start_channel + c.offset - 1; }
 };
@@ -88,6 +104,15 @@ class DeviceManager {
   Channel* setValue(const String& deviceId, int offset, int value);
   uint8_t getValue(const Device& d, const Channel& c) const;
 
+  // Drives a channel for a fixed time, then puts it back to zero. The timer
+  // lives here rather than in the browser on purpose: a smoke machine opened by
+  // a tab that then closes, or by a client that loses WiFi mid-burst, keeps
+  // pumping until somebody walks over to it. Duration is capped for the same
+  // reason. Returns false when the channel does not exist.
+  static const uint32_t MAX_BURST_MS = 30000;
+  bool startBurst(const String& deviceId, int offset, int value, uint32_t ms);
+  void tickBursts();  // called from the main loop
+
   // Serialization. `withValues` adds each channel's live DMX value, which the
   // API wants so the UI can show real slider positions, and which persistence
   // does not: devices.json describes the rig, not the current look.
@@ -98,8 +123,15 @@ class DeviceManager {
   void load();
   void save();
 
+  struct Burst {
+    String deviceId;
+    int offset;
+    uint32_t dueMs;
+  };
+
   DmxDriver& _dmx;
   std::vector<Device> _devices;
+  std::vector<Burst> _bursts;
   std::function<void(const String&, int, int)> _onValueChanged;
 };
 

@@ -206,6 +206,24 @@ void DmxWebServer::registerRoutes() {
     sendJson(200, doc);
   });
 
+  // Drive a channel for a fixed time, then back to zero, timed on the board.
+  // A smoke machine opened by a browser that then goes away has no way to close
+  // itself, which is why this does not live in the UI.
+  onApi(UriBraces("/api/devices/{}/burst"), HTTP_POST, [this]() {
+    JsonDocument body;
+    parseBody(body);
+    uint32_t ms = body["ms"] | 1000;
+    bool ok = _devices.startBurst(_server.pathArg(0), body["offset"] | 0, body["value"] | 255, ms);
+    if (!ok) {
+      sendError(404, "not found");
+      return;
+    }
+    JsonDocument out;
+    out["ok"] = true;
+    out["ms"] = ms > DeviceManager::MAX_BURST_MS ? DeviceManager::MAX_BURST_MS : ms;
+    sendJson(200, out);
+  });
+
   // -- labels --
   onApi("/api/labels", HTTP_GET, [this]() {
     JsonDocument doc;

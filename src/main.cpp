@@ -90,6 +90,7 @@ void loop() {
     wifiManager.loop();
     if (modules.mqttEnabled()) mqttManager.loop();
   }
+  deviceManager.tickBursts();
   dmx.refreshIfDue();
   serialConsole.poll();
 

@@ -29,11 +29,31 @@ static void labelsFromJson(JsonArrayConst in, std::vector<String>& out) {
   }
 }
 
+static EzConfig ezFromJson(JsonObjectConst e) {
+  EzConfig ez;
+  ez.kind = (const char*)(e["kind"] | "");
+  ez.mode = (const char*)(e["mode"] | "");
+  for (JsonPairConst kv : e["roles"].as<JsonObjectConst>()) {
+    ez.roles.push_back(std::make_pair(String(kv.key().c_str()), kv.value().as<int>()));
+  }
+  return ez;
+}
+
+static void ezToJson(const EzConfig& ez, JsonObject out) {
+  out["kind"] = ez.kind;
+  out["mode"] = ez.mode;
+  JsonObject roles = out["roles"].to<JsonObject>();
+  for (const auto& role : ez.roles) roles[role.first] = role.second;
+}
+
 static Device deviceFromJson(JsonObjectConst d) {
   Device dev;
   dev.id = (const char*)(d["id"] | "");
   dev.name = (const char*)(d["name"] | "Device");
   dev.category = normalizeCategory(String((const char*)(d["category"] | DEFAULT_CATEGORY)));
+  dev.card = (const char*)(d["card"] | "lite");
+  if (dev.card != "ez") dev.card = "lite";
+  dev.ez = ezFromJson(d["ez"].as<JsonObjectConst>());
   dev.start_channel = d["start_channel"] | 1;
   for (JsonObjectConst c : d["channels"].as<JsonArrayConst>()) {
     dev.channels.push_back(channelFromJson(c));
@@ -65,6 +85,7 @@ void DeviceManager::deviceToJson(const Device& d, JsonObject out, bool withValue
   out["id"] = d.id;
   out["name"] = d.name;
   out["category"] = d.category;
+  out["card"] = d.card;
   out["start_channel"] = d.start_channel;
   JsonArray chans = out["channels"].to<JsonArray>();
   for (const Channel& c : d.channels) {
@@ -76,6 +97,7 @@ void DeviceManager::deviceToJson(const Device& d, JsonObject out, bool withValue
   }
   JsonArray labels = out["labels"].to<JsonArray>();
   for (const String& id : d.labels) labels.add(id);
+  if (!d.ez.empty()) ezToJson(d.ez, out["ez"].to<JsonObject>());
 }
 
 void DeviceManager::devicesToJson(JsonArray out, bool withValues) const {
@@ -161,8 +183,48 @@ Device* DeviceManager::updateDevice(const String& id, JsonObjectConst data) {
   if (data["labels"].is<JsonArrayConst>()) {
     labelsFromJson(data["labels"].as<JsonArrayConst>(), d->labels);
   }
+  if (data["card"].is<const char*>()) {
+    d->card = (const char*)data["card"];
+    if (d->card != "ez") d->card = "lite";
+  }
+  if (data["ez"].is<JsonObjectConst>()) d->ez = ezFromJson(data["ez"].as<JsonObjectConst>());
   save();
   return d;
+}
+
+bool DeviceManager::startBurst(const String& deviceId, int offset, int value, uint32_t ms) {
+  if (!setValue(deviceId, offset, value)) return false;
+  if (ms > MAX_BURST_MS) ms = MAX_BURST_MS;
+
+  // Re-triggering the same channel restarts its timer rather than stacking a
+  // second one, so a double tap does not close the machine early.
+  for (Burst& b : _bursts) {
+    if (b.deviceId == deviceId && b.offset == offset) {
+      b.dueMs = millis() + ms;
+      return true;
+    }
+  }
+  Burst b;
+  b.deviceId = deviceId;
+  b.offset = offset;
+  b.dueMs = millis() + ms;
+  _bursts.push_back(b);
+  return true;
+}
+
+void DeviceManager::tickBursts() {
+  if (_bursts.empty()) return;
+  uint32_t now = millis();
+  for (size_t i = 0; i < _bursts.size();) {
+    // Subtraction rather than a plain compare, so a millis() rollover after
+    // 49 days closes the burst instead of leaving it open for another 49.
+    if ((int32_t)(now - _bursts[i].dueMs) >= 0) {
+      setValue(_bursts[i].deviceId, _bursts[i].offset, 0);
+      _bursts.erase(_bursts.begin() + i);
+    } else {
+      i++;
+    }
+  }
 }
 
 void DeviceManager::dropLabel(const String& labelId) {
