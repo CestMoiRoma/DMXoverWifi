@@ -33,7 +33,10 @@ class WifiManager {
   void replaceNetworks(JsonArrayConst in);
   const std::vector<WifiNet>& networks() const { return _networks; }
   void networksToJson(JsonArray out) const;  // full entries, passwords included
-  void scan(JsonArray out);                  // visible networks [{ssid, rssi}]
+  // Starts a scan and reports progress: {scanning, networks[]}. Asynchronous,
+  // because a blocking scan freezes the loop, and the loop is also what keeps
+  // DMX going out.
+  void scan(JsonObject out);
 
   bool connectKnown(uint32_t timeoutMs = 8000, int passes = 3, uint32_t pauseMs = 2000);
   bool tryConnect(const WifiNet& net, uint32_t timeoutMs = 8000);

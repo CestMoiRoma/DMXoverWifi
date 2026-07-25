@@ -1927,11 +1927,50 @@ document.getElementById("wifi-form").addEventListener("submit", async (e) => {
   renderWifiList();
 });
 
+// The scan is asynchronous on the board, so this polls until it lands. Results
+// go in a visible, clickable list as well as the datalist: hiding them in a
+// datalist meant clicking Scan appeared to do nothing at all unless you knew to
+// go and type in the SSID box afterwards.
 document.getElementById("wifi-scan-btn").addEventListener("click", async () => {
-  const results = await api("/api/wifi/scan");
-  const datalist = document.getElementById("wifi-scan-results");
-  datalist.innerHTML = "";
-  results.forEach((net) => datalist.appendChild(el("option", { value: net.ssid })));
+  const button = document.getElementById("wifi-scan-btn");
+  const results = document.getElementById("wifi-scan-list");
+  button.disabled = true;
+  button.textContent = "Scanning...";
+  results.innerHTML = "";
+
+  try {
+    let payload = await api("/api/wifi/scan");
+    for (let tries = 0; payload.scanning && tries < 20; tries++) {
+      await new Promise((resolve) => setTimeout(resolve, 700));
+      payload = await api("/api/wifi/scan");
+    }
+    const networks = payload.networks || [];
+    const datalist = document.getElementById("wifi-scan-results");
+    datalist.innerHTML = "";
+    if (networks.length === 0) {
+      results.appendChild(el("p", { class: "hint" }, ["Nothing found."]));
+    }
+    networks
+      .slice()
+      .sort((a, b) => b.rssi - a.rssi)
+      .forEach((net) => {
+        datalist.appendChild(el("option", { value: net.ssid }));
+        const item = el("div", { class: "list-item" });
+        const pick = el("button", { type: "button", class: "secondary small grow" }, [
+          net.ssid || "(hidden network)",
+        ]);
+        pick.addEventListener("click", () => {
+          document.getElementById("wifi-form").ssid.value = net.ssid;
+          document.getElementById("wifi-form").password.focus();
+        });
+        item.appendChild(pick);
+        item.appendChild(el("span", { class: "hint" }, [net.rssi + " dBm"]));
+        results.appendChild(item);
+      });
+  } finally {
+    button.disabled = false;
+    button.textContent = "Scan";
+  }
 });
 
 document.getElementById("hostname-form").addEventListener("submit", async (e) => {

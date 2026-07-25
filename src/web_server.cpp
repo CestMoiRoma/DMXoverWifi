@@ -295,7 +295,7 @@ void DmxWebServer::registerRoutes() {
   });
   onApi("/api/wifi/scan", HTTP_GET, [this]() {
     JsonDocument doc;
-    _wifi.scan(doc.to<JsonArray>());
+    _wifi.scan(doc.to<JsonObject>());
     sendJson(200, doc);
   });
   onApi(UriBraces("/api/wifi/{}"), HTTP_DELETE, [this]() {

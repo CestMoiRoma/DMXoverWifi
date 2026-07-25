@@ -142,7 +142,8 @@ sent whole on every read.
 
 ### Network
 
-- **The WiFi scan does not work.**
+- ~~The WiFi scan does not work.~~ Done: it was blocking the loop for seven
+  seconds and hiding its results in a datalist. Async now, with a visible list.
 
 ### UI
 

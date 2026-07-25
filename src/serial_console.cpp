@@ -361,12 +361,21 @@ void SerialConsole::cmdSetSystem(const String& rest) {
     emit(removed ? "wifi '" + ssid + "' removed" : "wifi '" + ssid + "' not found");
 
   } else if (sub == "wifi-list") {
-    emit("visible networks:");
+    // The scan is asynchronous now, so the first call starts it and a later one
+    // collects it. Saying so beats printing an empty list that looks like a
+    // board with no neighbours.
     JsonDocument scan;
-    _wifi.scan(scan.to<JsonArray>());
-    for (JsonObjectConst net : scan.as<JsonArrayConst>())
-      emit("  " + String((const char*)(net["ssid"] | "")) + " (rssi " +
-           String((int)(net["rssi"] | 0)) + ")");
+    _wifi.scan(scan.to<JsonObject>());
+    if (scan["scanning"] | false) {
+      emit("scan started, run this again in a few seconds for the results");
+    } else {
+      emit("visible networks:");
+      JsonArrayConst found = scan["networks"].as<JsonArrayConst>();
+      if (found.size() == 0) emit("  (none found)");
+      for (JsonObjectConst net : found)
+        emit("  " + String((const char*)(net["ssid"] | "")) + " (rssi " +
+             String((int)(net["rssi"] | 0)) + ")");
+    }
     emit("saved networks:");
     if (_wifi.networks().empty()) emit("  (none saved)");
     for (const WifiNet& net : _wifi.networks())

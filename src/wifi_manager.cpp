@@ -151,10 +151,29 @@ void WifiManager::networksToJson(JsonArray out) const {
   for (const WifiNet& net : _networks) netToJson(net, out.add<JsonObject>());
 }
 
-void WifiManager::scan(JsonArray out) {
-  int n = WiFi.scanNetworks();
-  for (int i = 0; i < n; i++) {
-    JsonObject o = out.add<JsonObject>();
+// Asynchronous on purpose. A blocking scan takes about seven seconds, and this
+// board runs everything from one loop: for those seven seconds it serves no
+// requests and, worse, stops refreshing DMX. Starting the scan and coming back
+// for the answer costs the caller a few polls and costs the rig nothing.
+void WifiManager::scan(JsonObject out) {
+  int state = WiFi.scanComplete();
+
+  if (state == WIFI_SCAN_FAILED) {  // nothing running: start one
+    WiFi.scanNetworks(true);
+    out["scanning"] = true;
+    out["networks"].to<JsonArray>();
+    return;
+  }
+  if (state == WIFI_SCAN_RUNNING) {
+    out["scanning"] = true;
+    out["networks"].to<JsonArray>();
+    return;
+  }
+
+  out["scanning"] = false;
+  JsonArray list = out["networks"].to<JsonArray>();
+  for (int i = 0; i < state; i++) {
+    JsonObject o = list.add<JsonObject>();
     o["ssid"] = WiFi.SSID(i);
     o["rssi"] = WiFi.RSSI(i);
   }
