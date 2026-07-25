@@ -111,8 +111,14 @@ void DmxWebServer::onApi(const Uri& uri, HTTPMethod method, std::function<void()
 
 void DmxWebServer::begin() {
   // hostHeader() comes for free; these do not.
+  // The two cores disagree here: the ESP8266 one takes the names variadically,
+  // the ESP32 one an array and a count.
+#if defined(ESP8266)
+  _server.collectHeaders("Origin", "Referer", "X-API-Key");
+#else
   const char* wanted[] = {"Origin", "Referer", "X-API-Key"};
   _server.collectHeaders(wanted, 3);
+#endif
   registerRoutes();
   _server.begin();  // the core already sets TCP_NODELAY on the listener
 }

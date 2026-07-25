@@ -3,6 +3,11 @@
 #include "ids.h"
 #include "settings_store.h"
 
+// Out-of-line definition for the in-class constant. Taking its address or
+// binding a reference to it, which passing it to ArduinoJson does, needs one:
+// the ESP32 build happened to fold it away, the ESP8266 link did not.
+const uint32_t DeviceManager::MAX_BURST_MS;
+
 static bool isValidType(const String& t) {
   return t == "slider" || t == "button" || t == "button-momentary" || t == "button-switch";
 }

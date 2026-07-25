@@ -122,8 +122,9 @@ sent whole on every read.
 - `PAR 2` and `Lyre` are on addresses 24 and 50 with channels inherited from a
   duplication. Placeholders, not a real patch.
 - MQTT has never been pointed at a broker.
-- The `d1mini` (ESP8266) environment has not been compiled since the C++
-  rewrite. Labels, modules, the websocket and the binary serial protocol have
-  never seen that compiler.
+- The ESP8266 targets are **beta**. They compile again, after two real bugs
+  found by finally building them, but nothing since the C++ rewrite has run on
+  the hardware. RAM is at 48.8% before a client connects, so the websocket and
+  several browsers at once are what to watch first.
 - The README roadmap still asks for a websocket and still says there is no
   authentication. Both shipped.

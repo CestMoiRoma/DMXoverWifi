@@ -1478,7 +1478,10 @@ document.getElementById("mesh-form").addEventListener("submit", async (e) => {
 async function renderInfo() {
   const info = await api("/api/info");
   document.getElementById("info-version").textContent = info.version;
-  document.getElementById("info-board").textContent = info.board || "unknown";
+  const board = document.getElementById("info-board");
+  board.textContent = info.board || "unknown";
+  // The ESP8266 target compiles but has not been run since the C++ rewrite.
+  if (info.board === "esp8266") board.appendChild(el("span", { class: "beta-tag" }, ["beta"]));
   document.getElementById("info-hostname").textContent = info.hostname
     ? info.hostname + ".local"
     : "not set";
