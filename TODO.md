@@ -118,7 +118,8 @@ sent whole on every read.
 
 ### Header
 
-- ~~Blackout, a red button: every channel to zero.~~ Done.
+- ~~Emergency stop, a red button: every channel to zero.~~ Done. Called Blackout
+  at first; renamed because it is the panic button, not a lighting cue.
 - ~~Save-guard.~~ Done: a sparse table of address to value, only the channels
   holding one, written after ten seconds of stillness.
 
@@ -153,8 +154,10 @@ language file.
 
 ### Decisions taken
 
-- **Blackout is a dry zero.** One press, every channel to nought, nothing
-  remembered. No latch, no restore.
+- **The emergency stop is a dry zero.** One press, every channel to nought,
+  nothing remembered. No latch, no restore. The HTTP route is still
+  `/api/blackout`: renaming it would break anything already scripted against it,
+  for nothing.
 - **All four languages ride inside the page.** They are inlined at build time,
   so switching is instant and offline and the page stays one request. Costs
   roughly 3 KB gzipped on a 29 KB page.

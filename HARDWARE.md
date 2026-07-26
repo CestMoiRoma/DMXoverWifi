@@ -46,7 +46,7 @@ with the esp8266 path, with DMX output fixed to GPIO2.
 | **Several universes** per board | ✅ one per hardware UART | ❌ single usable TX UART |
 | Art-Net / sACN input to DMX out | ✅ | ✅ (output side only) |
 | ESP-NOW parent / child mesh | ✅ parent **or** child | ✅ child only |
-| Scenes, blackout, grand master, profiles | ✅ | ✅ |
+| Scenes, emergency stop, grand master, profiles | ✅ | ✅ |
 | OTA firmware update | ✅ | ✅ |
 
 The DMX-side roadmap (input, RDM, multiple universes) is **ESP32 only**. It is a

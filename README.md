@@ -467,8 +467,8 @@ were already on the [ESPDMX](https://github.com/CestMoiRoma/ESPDMX) roadmap.
 - **Scenes.** Save the current state of the universe under a name and recall it
   from the Home page, MQTT or the serial console. Cheap to build on the existing
   buffer and the single most useful thing missing for real use.
-- **Blackout and a grand master.** A panic button and a global dimmer over every
-  channel. Small, and expected on anything that drives lights.
+- **Emergency stop and a grand master.** A panic button and a global dimmer over
+  every channel. Small, and expected on anything that drives lights.
 - **Fixture profiles.** A small library of common layouts, such as a 4-channel
   RGBW PAR or an 11-channel moving head, so adding a fixture is picking a profile
   and a start address instead of typing channels by hand.

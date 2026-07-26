@@ -451,10 +451,13 @@ form { margin: 0; }
 }
 
 /* Cards flow into as many columns as the window allows rather than one very
-   wide card per row, which is unreadable on a monitor and wasteful on a laptop. */
+   wide card per row, which is unreadable on a monitor and wasteful on a laptop.
+   The minimum is set by the widest card body: a 168px wheel, the gap, and the
+   fader column beside it. Below that an EZ card folds its faders under the
+   wheel, which is exactly what this width exists to prevent. */
 .device-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(22rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(24rem, 1fr));
   gap: 0.75rem;
   align-items: start;
 }
@@ -618,7 +621,7 @@ form { margin: 0; }
 .seg.on { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
 .seg:disabled { opacity: 0.45; cursor: not-allowed; }
 
-/* The blackout button. Red, always reachable, and pushed to the far side of the
+/* The emergency stop. Red, always reachable, and pushed to the far side of the
    header so a panic press cannot land on a navigation button by mistake. */
 button.danger {
   margin-left: auto;
@@ -694,7 +697,11 @@ button.danger:hover { background: #b91c1c; border-color: #b91c1c; }
 }
 .ez-layout .ez-main { flex: 0 0 auto; }
 .ez-layout .ez-block { margin: 0; }
-.ez-layout .fader-row { margin-top: 0; }
+/* A narrow basis on purpose. Flex decides where to break lines from this figure,
+   not from how wide the faders would like to be, so three faders beside a
+   joystick wrap among themselves into two columns instead of dropping the whole
+   block under the widget. It still grows to whatever room is left. */
+.ez-layout .fader-row { flex: 1 1 8rem; min-width: 0; margin-top: 0; }
 
 /* A card that is only a control: flat fader, percentages under it. */
 .fader.flat { display: block; width: 100%; margin: 0.6rem 0; }

@@ -82,6 +82,9 @@ function applyTranslations() {
   document.querySelectorAll("[data-i18n-placeholder]").forEach((node) => {
     node.setAttribute("placeholder", t(node.dataset.i18nPlaceholder, node.placeholder));
   });
+  document.querySelectorAll("[data-i18n-title]").forEach((node) => {
+    node.setAttribute("title", t(node.dataset.i18nTitle, node.title));
+  });
 }
 
 function setLanguage(code) {
@@ -324,8 +327,8 @@ document.querySelectorAll(".nav-btn").forEach((btn) => {
 
 // A dry zero: nothing is remembered and nothing comes back. Deliberately not
 // behind a confirmation, since the whole point of a panic button is that it
-// works on the first press.
-document.getElementById("blackout-btn").addEventListener("click", async () => {
+// works on the first press. The route keeps its old name; only the label moved.
+document.getElementById("estop-btn").addEventListener("click", async () => {
   await api("/api/blackout", "POST");
   lastLocalWrite.clear();  // the board's own echo should be believed now
   renderDevices();
@@ -480,7 +483,7 @@ function channelControl(device, channel) {
   } else if (channel.type === "button-momentary") {
     const button = el("button", { class: "channel-btn momentary" }, ["Hold"]);
     // Press and release are single events, so they go out immediately rather
-    // than waiting on the throttle: a blackout should not be 30 ms late.
+    // than waiting on the throttle: letting go should not be 30 ms late.
     const press = (e) => {
       if (e) e.preventDefault();
       send(255, true);
