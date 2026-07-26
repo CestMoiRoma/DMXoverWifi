@@ -260,6 +260,9 @@ void DmxWebServer::registerRoutes() {
       sendError(404, "not found");
       return;
     }
+    // A scene moves a dozen channels at once; report them all rather than
+    // leaving Home Assistant a look behind.
+    _mqtt.publishAllStates();
     out["ok"] = true;
     sendJson(200, out);
   });
@@ -339,6 +342,7 @@ void DmxWebServer::registerRoutes() {
   // browser that might not finish it.
   onApi("/api/blackout", HTTP_POST, [this]() {
     _devices.allOff();
+    _mqtt.publishAllStates();
     JsonDocument out;
     out["ok"] = true;
     sendJson(200, out);
@@ -349,9 +353,18 @@ void DmxWebServer::registerRoutes() {
   onApi(UriBraces("/api/channel/{}"), HTTP_POST, [this]() {
     JsonDocument body;
     parseBody(body);
-    if (!_devices.setValueByUid(_server.pathArg(0), body["value"] | 0)) {
+    int value = body["value"] | 0;
+    if (!_devices.setValueByUid(_server.pathArg(0), value)) {
       sendError(404, "no channel with that uid");
       return;
+    }
+    // Every EZ widget writes through here, so without this the colour wheel and
+    // the joystick would move the rig while Home Assistant kept showing what it
+    // last heard.
+    Device* device = nullptr;
+    Channel* channel = nullptr;
+    if (_devices.findByChannelUid(_server.pathArg(0), device, channel)) {
+      _mqtt.publishState(device->id, channel->offset, value);
     }
     JsonDocument out;
     out["ok"] = true;

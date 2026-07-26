@@ -43,6 +43,12 @@ class MqttManager {
   void publishDiscovery();
   void publishState(const String& deviceId, int offset, int value);
 
+  // Every channel's current value, sent after discovery. A broker that has just
+  // met this board knows nothing about a rig that has been lit for an hour, and
+  // a value published only when it changes would leave Home Assistant showing
+  // zero until somebody moved a fader.
+  void publishAllStates();
+
   // Retained discovery outlives whatever published it, so a fixture or a scene
   // that is deleted here has to be withdrawn there too. Called before the thing
   // itself goes, while its channels can still be named.

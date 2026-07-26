@@ -371,6 +371,49 @@ void MqttManager::publishDiscovery() {
     }
     _client.subscribe(commandTopic.c_str());
   }
+
+  // The emergency stop, on the same device as the scenes. Somebody holding a
+  // phone in another room should be able to kill the rig without first finding
+  // the web UI and the right page of it.
+  {
+    String commandTopic = base + "/estop/set";
+    String u = clientId() + "_estop";
+
+    JsonDocument payload;
+    payload["name"] = "Emergency stop";
+    payload["unique_id"] = u;
+    payload["command_topic"] = commandTopic;
+    payload["availability_topic"] = availability;
+    payload["icon"] = "mdi:alert-octagon";
+
+    JsonObject deviceBlock = payload["device"].to<JsonObject>();
+    deviceBlock["identifiers"].to<JsonArray>().add(clientId());
+    deviceBlock["name"] = "DMX over WiFi";
+    deviceBlock["manufacturer"] = "DIY";
+    deviceBlock["model"] = "DMX-over-WiFi";
+
+    String out;
+    serializeJson(payload, out);
+    if (_client.publish((prefix + "/button/" + u + "/config").c_str(), out.c_str(), true)) {
+      _entities++;
+    }
+    _client.subscribe(commandTopic.c_str());
+  }
+
+  // Discovery says what exists; this says where it currently stands.
+  publishAllStates();
+}
+
+void MqttManager::publishAllStates() {
+  if (!_client.connected()) return;
+  for (Device& device : _dm.devices()) {
+    for (Channel& channel : device.channels) {
+      // Buttons have no state to report: pressing one is an event, and there is
+      // no such thing as a button that is currently pressed here.
+      if (channel.type != "slider" && channel.type != "button-switch") continue;
+      publishState(device.id, channel.offset, _dm.getValue(device, channel));
+    }
+  }
 }
 
 // An empty retained payload on a config topic is how MQTT discovery says "this
@@ -400,6 +443,14 @@ void MqttManager::onMessage(char* topic, uint8_t* payload, unsigned int len) {
   if (!t.startsWith(prefix) || !t.endsWith("/set")) return;
 
   String u = t.substring(prefix.length(), t.length() - 4);  // drop prefix and "/set"
+
+  // Everything to zero, whatever the payload says. A panic button that argues
+  // about its argument is not a panic button.
+  if (u == "estop") {
+    _dm.allOff();
+    publishAllStates();
+    return;
+  }
 
   // A scene is fired, not set. Any payload does it: Home Assistant sends "ON",
   // and an automation written by hand should not have to guess the word.
@@ -459,7 +510,10 @@ void MqttManager::onMessage(char* topic, uint8_t* payload, unsigned int len) {
 void MqttManager::publishState(const String& deviceId, int offset, int value) {
   if (!_client.connected()) return;
   String stateTopic = baseTopic() + "/" + uid(deviceId, offset) + "/state";
-  _client.publish(stateTopic.c_str(), String(value).c_str());
+  // Retained, so a Home Assistant that restarts learns the rig's state from the
+  // broker instead of waiting for the next time somebody moves something. The
+  // last will covers the case where the value is retained but the board is gone.
+  _client.publish(stateTopic.c_str(), String(value).c_str(), true);
 }
 
 void MqttManager::trampoline(char* topic, uint8_t* payload, unsigned int len) {
