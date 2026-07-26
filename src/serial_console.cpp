@@ -492,7 +492,7 @@ void SerialConsole::cmdGetStatus(const String& rest) {
     _mqtt.statusToJson(m.to<JsonObject>());
     emit("mqtt: enabled=" + pyBool(m["enabled"] | false) + " connected=" +
          pyBool(m["connected"] | false) + " broker=" + String((const char*)(m["broker"] | "")) +
-         ":" + String((int)(m["port"] | 1883)) + " entities=" + String((int)(m["entities"] | 0)) +
+         ":" + String((int)(m["port"] | DEFAULT_MQTT_PORT)) + " entities=" + String((int)(m["entities"] | 0)) +
          " attempts=" + String((int)(m["attempts"] | 0)));
     if (!m["reason"].isNull()) emit("  why: " + String((const char*)m["reason"]));
     JsonDocument sys;
@@ -519,7 +519,7 @@ void SerialConsole::cmdGetStatus(const String& rest) {
     _mqtt.statusToJson(m.to<JsonObject>());
     emit("mqtt: enabled=" + pyBool(m["enabled"] | false) + " connected=" +
          pyBool(m["connected"] | false) + " broker=" + String((const char*)(m["broker"] | "")) +
-         ":" + String((int)(m["port"] | 1883)) + " entities=" + String((int)(m["entities"] | 0)) +
+         ":" + String((int)(m["port"] | DEFAULT_MQTT_PORT)) + " entities=" + String((int)(m["entities"] | 0)) +
          " attempts=" + String((int)(m["attempts"] | 0)));
     if (!m["reason"].isNull()) emit("  why: " + String((const char*)m["reason"]));
 

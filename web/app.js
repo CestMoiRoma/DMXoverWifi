@@ -3225,9 +3225,7 @@ async function renderInfo() {
   repo.appendChild(el("a", { href: info.repo, target: "_blank" }, [info.repo]));
   const wiki = document.getElementById("info-wiki");
   wiki.innerHTML = "";
-  wiki.appendChild(el("a", { href: info.wiki_local, target: "_blank" }, ["Local copy"]));
-  wiki.appendChild(document.createTextNode(" | "));
-  wiki.appendChild(el("a", { href: info.wiki_online, target: "_blank" }, ["On GitHub"]));
+  wiki.appendChild(el("a", { href: info.wiki_online, target: "_blank" }, ["Read it on GitHub"]));
 }
 
 // ---- boot ----

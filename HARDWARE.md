@@ -7,7 +7,9 @@ so the web UI, the REST API, the MQTT bridge and the serial console behave
 identically on both.
 
 The two families are **not** equal in what they can do, and this page is the
-honest map of that. See [README.md](README.md) for wiring and build steps.
+honest map of that. See [README.md](README.md) for the build steps,
+[Wiring](docs/wiki/wiring.md) for the circuit, and [TODO.md](TODO.md) for the
+roadmap the second table below refers to.
 
 ## Supported boards
 

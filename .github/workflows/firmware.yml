@@ -88,11 +88,11 @@ jobs:
       # A tag that disagrees with the firmware it contains would leave every
       # board thinking an update is available forever, since the version it
       # reports after installing would still be the old one.
-      - name: Check the tag matches src/version.h
+      - name: Check the tag matches dev.env
         run: |
           tag="${GITHUB_REF_NAME#v}"
-          declared=$(sed -n 's/.*FW_VERSION "\(.*\)".*/\1/p' src/version.h)
-          echo "tag $tag, version.h $declared"
+          declared=$(sed -n 's/^FW_VERSION=//p' dev.env | tr -d '"'"'"' \r')
+          echo "tag $tag, dev.env $declared"
           test "$tag" = "$declared"
 
       - uses: actions/download-artifact@v4

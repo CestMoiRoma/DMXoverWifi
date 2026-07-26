@@ -23,7 +23,7 @@ pio run -e d1mini
 
 Flash and try it on real hardware where you can. There is no automated test suite
 in this rewrite yet; the CircuitPython line had one, and restoring a
-host-compilable equivalent is on the [roadmap](README.md#reliability-and-operations).
+host-compilable equivalent is on the [roadmap](TODO.md).
 Until then, changes are validated by building both targets and testing on the
 board.
 

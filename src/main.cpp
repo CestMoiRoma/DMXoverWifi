@@ -74,8 +74,8 @@ void setup() {
 
   // Join a known network, or fall back to the config hotspot.
   if (!wifiManager.connectKnown()) {
-    wifiManager.startAp(sys["ap_ssid"] | "ESP-DMX", sys["ap_password"] | "DMX4ALL1",
-                        sys["ap_ip"] | "1.1.1.1");
+    wifiManager.startAp(sys["ap_ssid"] | DEFAULT_AP_SSID, sys["ap_password"] | DEFAULT_AP_PASSWORD,
+                        sys["ap_ip"] | DEFAULT_AP_IP);
   }
 
   webServer.begin();

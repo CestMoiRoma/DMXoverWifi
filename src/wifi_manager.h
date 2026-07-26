@@ -4,6 +4,8 @@
 
 #include <vector>
 
+#include "config.h"
+
 // Addressing is per network, not per board: the same rig plugs into a venue
 // that hands out DHCP one night and wants a fixed address the next, and the
 // answer belongs to the network rather than to the board.
@@ -15,7 +17,7 @@ struct WifiNet {
   String static_ip;
   String static_netmask = "255.255.255.0";
   String static_gateway;
-  String static_dns = "1.1.1.1";
+  String static_dns = DEFAULT_DNS;
 };
 
 // Owns the saved-network list and the radio's STA/AP state. Connects to the

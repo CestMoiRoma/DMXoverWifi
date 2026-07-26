@@ -21,11 +21,11 @@ static void seedDefault(const char* name, JsonDocument& doc) {
   } else if (strcmp(name, "mqtt.json") == 0) {
     doc["enabled"] = false;
     doc["host"] = "";
-    doc["port"] = 1883;
+    doc["port"] = DEFAULT_MQTT_PORT;
     doc["username"] = "";
     doc["password"] = "";
-    doc["base_topic"] = "dmxwifi";
-    doc["discovery_prefix"] = "homeassistant";
+    doc["base_topic"] = DEFAULT_MQTT_BASE_TOPIC;
+    doc["discovery_prefix"] = DEFAULT_MQTT_DISCOVERY_PREFIX;
   } else if (strcmp(name, "api.json") == 0) {
     doc["http_api_enabled"] = true;
     doc["websocket_enabled"] = true;
@@ -37,10 +37,10 @@ static void seedDefault(const char* name, JsonDocument& doc) {
     doc["dmx_tx_pin"] = DEFAULT_DMX_TX_PIN;
     doc["dmx_dir_pin_enabled"] = false;
     doc["dmx_dir_pin"] = DEFAULT_DMX_DIR_PIN;
-    doc["hostname"] = "ESP-DMX";
-    doc["ap_ssid"] = "ESP-DMX";
-    doc["ap_password"] = "DMX4ALL1";
-    doc["ap_ip"] = "1.1.1.1";
+    doc["hostname"] = DEFAULT_HOSTNAME;
+    doc["ap_ssid"] = DEFAULT_AP_SSID;
+    doc["ap_password"] = DEFAULT_AP_PASSWORD;
+    doc["ap_ip"] = DEFAULT_AP_IP;
     // Station addressing lives per WiFi entry now, not here.
   } else if (strcmp(name, "mesh.json") == 0) {
     doc["role"] = "none";  // WIP: stored only, not acted on yet

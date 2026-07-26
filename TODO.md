@@ -1,257 +1,284 @@
-# Work in progress
+# Roadmap and work in progress
 
-Scratch list for work agreed but not yet done. Lives in the repo on purpose: a
-console scrollback is not a place to keep a plan.
+The plan for this project, in the repository on purpose: a console scrollback is
+not a place to keep one. This file is the **only** roadmap. The README used to
+carry a second one and no longer does.
 
-## Batch 3
+Two halves. **Batches** are agreed work, in order. **Later** is everything wanted
+but not scheduled, where nothing is a promise and the order is rough. Below that,
+what has been settled *against*, so it stops being proposed again.
 
-| # | Item | Status |
-|---|---|---|
-| 1 | New-device pre-popup: Lite, EZ Control, Restore from JSON | done |
-| 2 | Up arrow on each card, saving the fixture as JSON | done |
-| 3 | EZ Control widgets | done, never yet driven against a real fixture |
-| 4 | Sort and search column on the left | done |
-| 5 | Network page: rename, W5500 Ethernet, Beta tags | done, Ethernet never run against hardware |
-| — | Config: hide the DE/RE pin field when disabled | done in `803707b` |
-| — | EZ card data model and board-side burst timing | done in `8a3a994` |
+Batches 1 to 7 have shipped and are not listed, so the work starts at 8. What the
+finished batches built is described in [WIKI.md](WIKI.md), and what was decided
+along the way is in the git log.
 
-## EZ Control spec
+## Batch 8, the two switches the confirmation pass found
 
-The shorthand is the one it was written in: **A** is what the creation dialog
-asks for, **D** is what the card then displays.
+### Headless at runtime
 
-Two rules run through all of it:
+Headless exists, but it is a decision taken at the flash: `WITH_WEBUI=0`, two of
+the four PlatformIO environments, and `tools/pack_web.py` does not even emit the
+page's C arrays. A board carrying the full UI has no way to stop serving it, and
+neither of the neighbouring switches does the job. `http_api_enabled=false` never
+touches the UI, because the same-origin exemption is tested first;
+`wifi_enabled=false` takes the API and MQTT down with the page, which is the
+opposite of headless.
 
-- **The percentage row is 0 / 25 / 50 / 75 / 100** everywhere it appears.
-- **Optional channels are genuinely optional.** Left blank at creation, the role
-  is not bound and its part of the display does not appear at all. Filled in, the
-  display grows to match. Nothing is written to a channel the fixture never
-  claimed.
+To build: a `webui_enabled` flag in `api.json` beside the other module switches,
+tested in `DmxWebServer::serveIndex()`, answering 404 when off, with every
+`/api/*` route left alone. The way back has to exist before the switch does: the
+serial console, and the API with its key. A `WITH_WEBUI=0` build ignores the flag,
+since there is no page in the binary to withhold.
 
-| Kind | A, asked at creation | D, shown on the card |
-|---|---|---|
-| `dimmer` | Channel | Slider + percentage row |
-| `strobe` | Channel | Slider + percentage row |
-| `mono` | Channel. Optional: strobe | Slider + percentage row. Optional strobe slider + percentage row |
-| `rgb` | Red, green, blue. Optional: dimmer, strobe | Colour wheel. Optional master fader, optional strobe slider, each with its percentage row |
-| `rgbw` | Red, green, blue, white. Optional: dimmer, strobe | As `rgb` |
-| `cwww` | Cold white, warm white. Optional: dimmer, strobe | Whites wheel, cold to warm. Optional master fader and strobe |
-| `smoke` | Mode (`onoff` or `slider`), and the channel | On/off button, or a slider in slider mode, plus burst 1 s, 3 s, 5 s and burst *n* s with *n* typed in |
-| `motion` | Vertical, horizontal. Optional: vertical fine, horizontal fine, speed | Joystick, a mode selector (Move / Fine tune), and where a speed channel is bound, a speed slider + percentage row |
+### The WebSocket switch does nothing at runtime
 
-### The dimmer on the light cards
+`wsServer.begin()` runs once in `setup()` and returns early when the module is
+off, and nothing ever calls a stop. So unchecking the box leaves the socket
+listening on port 81 and still accepting any client holding the key, and checking
+it leaves the socket absent. Only the UI reacts, and only after a reload, because
+it reads `websocket_enabled` from `/api/info`.
 
-Carried over from the proposals as an **optional** role on `rgb`, `rgbw` and
-`cwww`, on the same terms as strobe: blank means unbound and nothing is drawn.
+Either make it real, starting and stopping from the `/api/modules` POST, or put
+"reboot to apply" on the label the way the DMX pin fields do. The first is the
+honest one, given the paragraph above those checkboxes says each subsystem can be
+switched off entirely.
 
-It is there because a colour wheel alone cannot set intensity. Pulling the red
-down changes the hue, not the brightness, so on a fixture with a master dimmer,
-a wheel with no dimmer beside it can reach a colour but not a level. The
-reference PAR is exactly that shape: dimmer on offset 1, RGBW on 2 to 5.
+## Batch 9, the EZ cards that were never revisited
 
-`dimmer` and `strobe` also exist as cards in their own right, for a fixture whose
-whole job is one of those.
+Motion and the colour wheel have each had a pass and stay as they are. The rest
+were built once and not touched since:
 
-### Settled
+- `cwww`, the warm-to-cold vertical crossfade
+- `smoke`, on/off or pump fader, with its bursts
+- `dimmer`
+- `strobe`
+- `mono`
 
-- **Raw channels stay reachable.** Every EZ card carries a button that flips it
-  to the lite view, one control per channel, for the nights a rig misbehaves and
-  the widget is in the way.
-- **The joystick is a gamepad, not a map.** Deflection nudges: left steps the
-  value down by one, right steps it up, likewise vertical, repeating while held
-  rather than jumping to an absolute position. Two settings per card invert the
-  horizontal and the vertical independently, since half the moving heads on a
-  bar are hung upside down.
-- **Fine tune is a per-card setting**, offering "control movement and fine tune"
-  or "fine tune only".
+What each of those should become is still to be written down. Worth deciding
+before touching code, because "rework" on its own will produce five cards that
+do not agree with each other. The two that were polished are the reference for
+layout, for how a bound optional role appears, and for where the presets sit.
 
-- **Roles follow the fixture.** Nothing to build: roles store offsets, and the
-  DMX address is `start_channel + offset - 1`, so moving a fixture's address
-  moves every role with it. What does need building is the dialog refusing to
-  close on a broken binding, warning and holding the popup open until the role
-  points at a channel that exists.
-- **The whites control is a vertical slider**, warm at the top and cold at the
-  bottom, in the spirit of the Home Assistant light entity. `cwww` is for
-  fixtures that mix their own warm and cold white.
-- **The smoke auto-off is optional**, a per-card setting rather than a rule.
-  Some jobs really do want a long continuous run, and a cap that cannot be
-  turned off is its own kind of failure.
-- **Joystick deflection sets the rate.** A small push steps by one, full travel
-  steps by more, with the maximum step configurable per card.
+## Batch 10, DMX in
 
-### Deferred to batch 4
+Deliberately ahead of batch 11: the argument for input is the parent role, one box
+patched into a real desk and relaying what it reads to the children. That turns
+the project into wireless DMX distribution rather than a standalone controller.
 
-- **Gang by label.** One card drives every fixture sharing a label, so the whole
-  Face bar takes a colour at once. Needs a clear indication of what a control is
+- Rework the DE/RE pin handling.
+- Add the MAX485's RO, the receiver output, so the board can read a universe as
+  well as write one.
+- A DMX reception page showing what is arriving, per channel.
+
+Already settled elsewhere, so not worth re-deciding: this is **ESP32 only**, per
+the capability matrix in [HARDWARE.md](HARDWARE.md), because the ESP8266 has no
+receive pin free and its transmit UART has no RX line at all. `esp_dmx` already
+does receive, so the library is in place.
+
+Genuinely open. A half-duplex MAX485 cannot transmit and receive at once, which
+is what DE/RE exists to arbitrate, so the two directions have to take turns
+inside a 25 ms frame budget or the wiring needs a second transceiver. And the
+board has to know what it is for: monitoring only, merging with what it
+generates, or passing straight through.
+
+## Batch 11, Parent/Child over ESP-NOW
+
+ESP-NOW is the right transport for relaying a live universe: connectionless, no
+access point in the path, far less latency and jitter than an HTTP or MQTT round
+trip, and it keeps working when the venue WiFi does not. The shape is ESP-NOW for
+the universe stream and the existing WiFi stack for configuration.
+
+A parent controls the children. A child is an executant and stores nothing beyond
+its ESP-NOW config, its WiFi config if it was given one, and its save-guard.
+
+- **A Receiver field on every card.** Card creation asks which output drives it:
+  OnBoard first, meaning the parent's own MAX485, then each child.
+- **Naming.** A child names itself `Child-XXXXXX` at first boot, so two of them
+  on a bar can be told apart without reading MAC addresses off a label. The
+  parent can rename it afterwards, over ESP-NOW or over the WiFi fallback.
+- **WiFi fallback.** A child sitting on the same network as its parent can take
+  its orders over WiFi when ESP-NOW does not get through.
+- **Network settings handed down.** The parent gives its children a backup copy
+  of the WiFi it knows: every SSID and password, plus the fly-away network from
+  batch 12. Nothing else travels.
+
+What exists to build on: `mesh.json` stores `role`, `ssid` and `password`,
+`/api/mesh` reads and writes it, the Parent/Child panel in the UI edits it and
+`Set-System mesh` sets it from the console. All four are labelled "stored only, no
+effect yet", which is accurate: nothing acts on the role. The plumbing is there
+and the behaviour is not.
+
+One hardware constraint from HARDWARE.md that shapes the UI: an ESP32 can be
+parent **or** child, an ESP8266 can only be a child. The role selector should say
+so rather than offering a parent role the board cannot fill.
+
+## Batch 12, fly-away mode
+
+Switchable on only once it has been configured, and it overrides the hotspot:
+when no known network answers, this is what comes up instead.
+
+- A custom SSID, and a password that has to be chosen. No shipped default.
+- It is also the fallback network for whichever children were given it.
+
+Why not simply keep using the hotspot: the hotspot ships with a known name and a
+known password, and a nomadic install whose owner forgot to change either is an
+open door. Fly-away mode refuses to turn on until it has its own.
+
+When enabled it becomes the new entry point for configuring WiFi.
+
+## Batch 13, grow the desktop application
+
+Not a new build. `tools/dmx_desktop.py` already exists, a Tkinter control surface
+over USB from commit `908181d`, and it is minimal. The transport it should keep
+using is the **binary serial protocol** shipped alongside it: `0x7E`-framed,
+crc8 per frame, four commands (write a slot, write a run, read a run back, ping),
+sharing the link with the text console and told apart by a start byte the text
+protocol never begins a line with. Measured at 914 updates a second against 81
+for the equivalent text command, so nothing here should fall back to text for
+values.
+
+The parts already in place, and not to be rebuilt: `Get-Config` answers with one
+line of JSON so the client never scrapes human-readable status, writes are
+coalesced per channel on the same 30 ms window as the web UI, and consecutive
+addresses ride in one block frame, which is exactly the shape of a colour fade
+across R, G and B.
+
+So the batch is what the surface should grow into: the EZ widgets, scenes, groups
+and the emergency stop, rather than the bare fader grid it is now. Worth
+listing per feature before starting, as for batch 9.
+
+One packaging note that already bit once: PlatformIO's bundled Python has no
+Tkinter, so the app runs on the system Python. Anything shipped to a user needs
+its own answer to that.
+
+# Later
+
+Wanted, not scheduled, and not promised. Items marked **carried over** were
+already on the [ESPDMX](https://github.com/CestMoiRoma/ESPDMX) roadmap. The
+capability matrix in [HARDWARE.md](HARDWARE.md) says which chip can host which of
+these; the DMX-side ones are ESP32 only, and that is a chip limit rather than a
+missing library.
+
+## Getting DMX in and out
+
+- **Several universes per board.** More than one MAX485 on the same ESP32, each on
+  its own TX pin, each with its own 512-channel buffer. The fixture model already
+  addresses channels within a device, so it mostly needs a universe field and a
+  driver instance per output. Watch the frame budget: the loop has to clock out
+  every universe inside the same 25 ms window. Worth doing before the config
+  format calcifies further, since it touches everything that assumes one universe.
+- **Art-Net and sACN input.** Accept a universe over the network from QLC+,
+  Resolume, a grandMA on PC or anything else speaking the standard protocols, and
+  put it on the wire. The shortest path to the box being useful alongside software
+  people already run, and it shares most of its plumbing with batch 10.
+- **RDM (E1.20).** Discovery and remote addressing over the same pair. `esp_dmx`
+  supports it, so it becomes reachable once batch 10 lands, but it needs a timing
+  discipline the current transmit loop does not have.
+
+## Hardware
+
+- **A PCB version.** **Carried over.** ESP32 module, MAX485, XLR and power on one
+  board instead of a breakout and jumper wires. Worth doing after the
+  multi-universe work, so the board is laid out for the final number of outputs
+  rather than redone later. Isolated RS-485 earns its extra parts on anything
+  that leaves the workshop.
+
+## Control and interface
+
+- **A grand master.** The emergency stop shipped; a global dimmer scaling every
+  channel did not, and is the other half of what a desk gives you. It is not the
+  same feature as the panic button and should not be bolted onto it: the stop is a
+  dry zero with nothing remembered, on purpose.
+- **Fixture profiles, imported rather than hand-built.** Picking a profile and a
+  start address beats typing eleven channels. Building a library by hand is a
+  permanent maintenance chore, so the better shape is a parser: QLC+ `.qxf` files
+  or Open Fixture Library JSON into a device plus its EZ roles, which arrives with
+  thousands of fixtures already defined. The EZ cards took some of the sting out
+  of this already, since binding five roles is quicker than naming eleven
+  channels.
+- **Gang by label.** One card driving every fixture that shares a label, so a new
+  fixture joins the Face bar simply by being tagged. Deferred out of batch 3 and
+  never picked up. Groups do most of it now by holding a chosen set of channels,
+  so what is left is the convenience. Needs a clear statement of what a control is
   about to move, because a widget that silently drives eight fixtures is a trap.
+- **Identify a fixture.** A button that flashes one fixture so you can tell which
+  physical unit a card drives. Trivial next to everything else here, and worth
+  more than it looks the first time you patch a bar of eight identical PARs.
+- **Protected channels.** A channel flagged do-not-touch, skipped by the emergency
+  stop, by scenes and by groups. The stop is a dry zero over all 512 slots, and on
+  a fixture whose first channel selects a mode rather than a level, zeroing it
+  does not darken the fixture, it changes what every other channel means.
+- **A MIDI surface.** WebMIDI in the browser mapped onto faders and presets, so a
+  cheap controller drives the rig. Entirely browser side, no firmware.
 
-### User presets, one mechanism for two jobs
+## Reliability and operations
 
-Nothing is shipped pre-populated. A card can **save what it is currently showing
-under a name**, and recall it later with one press. On a light card that stores
-a colour, on a motion card a position, but it is the same feature: capture the
-values currently bound to the card's roles, name them, put them back on demand.
+- **A watchdog.** If the main loop wedges, the rig freezes on its last frame and
+  nothing recovers it. The hardware watchdog would reset the board instead.
+- **Bring back the off-board test suite.** The CircuitPython line had 320 tests
+  that ran the firmware on a PC against a fake ESP32. That harness was not carried
+  into the rewrite, and there is no test suite at all today. A host-compilable
+  equivalent, a `native` PlatformIO environment with the hardware behind the
+  existing abstraction layers, would restore it. It would pay for itself the
+  moment batch 9 starts rewriting cards.
+- **A factory image.** Bootloader, partition table and application in one file, so
+  a first flash does not need PlatformIO installed. Left over from batch 5.
+- **A preview before a config restore.** Loading a `.json` applies system, WiFi,
+  MQTT, mesh, labels and fixtures in one movement with nothing shown first. A diff
+  against what is on the board would make it a decision instead of a leap.
+- **Board discovery.** Once parents, children and fly-away mode exist there will be
+  several of these on one network. mDNS is already answered, so a scan that lists
+  the boards it finds costs little, in the web UI and in the desktop app both.
+- **Something better than an API key.** The key gates the API and the websocket,
+  and the served UI is trusted because a browser will not let a page forge its own
+  `Origin`. That is the usual bargain for a device on a trusted LAN and it is no
+  defence against anything already on the same network: no user accounts, no TLS,
+  no rate limiting.
 
-The argument is repeatability. A wheel or a joystick lands somewhere slightly
-different every time it is aimed at; a named preset is identical today and next
-month.
+# Settled against
 
-Storage lives in the fixture's own `ez` block, so a preset travels with its
-fixture through the JSON export, the config backup and the `.env` seeding
-without any of them learning a new concept:
+Not oversights. Each of these was considered and rejected for a reason that is
+still true, so anything heading this way has to argue with the reason rather than
+around it.
 
-```json
-"ez": { "kind": "rgbw", "roles": {…},
-        "presets": [ {"name": "Warm wash", "values": {"red": 255, "green": 140, "blue": 40}} ] }
-```
+- **Fades, chases and an on-board effects engine.**
+  [Timing and latency](docs/wiki/timing.md) is the argument: no preemption in the
+  loop, and a frame interval checked with `millis()` rather than driven by a timer,
+  so a fade streamed from this box would be visibly uneven. The documented
+  position is that chases and effects belong to the fixture's own programs, and
+  that deterministic timing means a real desk or a wired Art-Net node.
+- **A board that updates itself.** Decided in batch 5. It needs a certificate
+  bundle in flash, which goes stale and costs another 65 KB, and skipping the
+  check means accepting firmware from anything able to sit in the middle of that
+  connection. The browser fetches the release instead, and the UI says as much: a
+  board with no laptop nearby cannot update itself.
 
-Capped at a small number per fixture, since this rides inside a config that is
-sent whole on every read.
+# Loose ends
 
-### Motion extras, settled
-
-- **Arrow keys** nudge while the card has focus.
-- **Double-click the joystick** to centre, rather than a separate button.
-- **Saved positions** are the preset mechanism above.
-
-## Batch 4
-
-### Header
-
-- ~~Emergency stop, a red button: every channel to zero.~~ Done. Called Blackout
-  at first; renamed because it is the panic button, not a lighting cue.
-- ~~Save-guard.~~ Done: a sparse table of address to value, only the channels
-  holding one, written after ten seconds of stillness.
-
-### Scenes, a new page
-
-~~Done.~~ Plus a "capture the live look" button, which fills every value from
-what the rig is currently doing: building a look on the rig and then naming it
-beats typing numbers into a form.
-
-### Groups, a new page
-
-~~Done.~~ A lite group is one fader writing the same value to every channel it
-holds; an EZ group gives each role a set of channels. Every group control states
-how many channels it is about to move.
-
-### EZ motion
-
-~~Reverse speed.~~ Done.
-
-### Network
-
-- ~~The WiFi scan does not work.~~ Done: it was blocking the loop for seven
-  seconds and hiding its results in a datalist. Async now, with a visible list.
-
-### UI
-
-All done. One thing to know about the i18n: the **chrome** is translated, which
-is everything a user scans or clicks, 83 strings across the four languages. The
-long explanatory paragraphs are still English. Four times that much prose is a
-different job from wiring the mechanism, and adding one now costs a line per
-language file.
-
-### Decisions taken
-
-- **The emergency stop is a dry zero.** One press, every channel to nought,
-  nothing remembered. No latch, no restore. The HTTP route is still
-  `/api/blackout`: renaming it would break anything already scripted against it,
-  for nothing.
-- **All four languages ride inside the page.** They are inlined at build time,
-  so switching is instant and offline and the page stays one request. Costs
-  roughly 3 KB gzipped on a 29 KB page.
-- **A group is a chosen set of channels**, ticked per fixture and driven
-  together, not a set of whole fixtures.
-- **Every device and every channel carries a stable uid.** Scenes and groups
-  reference channels by uid, so a fixture being readdressed, reordered or edited
-  does not disturb them: the scene looks the channel up rather than remembering
-  where it sat. The same applies to saving and restoring groups. The "cancel or
-  continue without this device" prompt is then only needed for a file brought in
-  from another board, where a uid genuinely does not exist here.
-
-### Saving and restoring scenes and groups
-
-Open question as posed: a device's config can change underneath a saved scene.
-Either it cannot be done, or every device carries a UUID and a restore that
-cannot find one asks: cancel, or continue without that device.
-
-## Batch 5.5, MQTT
-
-~~Done.~~ Scenes are published as Home Assistant scene entities and fire on any
-payload sent to `<base>/scene/<id>/set`. Groups were not asked for and are not
-published.
-
-What the bridge learned along the way, all of it found by finally pointing it at
-a broker:
-
-- The Save button on the MQTT form had no handler, so the browser submitted the
-  form natively, reloaded the page and posted nothing. Nothing was ever stored,
-  which is why Home Assistant heard nothing and the fields were empty on return.
-- PubSubClient keeps the host pointer it is given rather than copying it, and it
-  was given a local. It read freed memory on every connect.
-- A port arriving as `"1883"` from a form is not an integer to ArduinoJson, so
-  `| 1883` silently returned the default.
-- Its connect blocked the loop for over four seconds against a host that was not
-  there, and the board stopped answering HTTP. The TCP connection is now made in
-  `openSocket()` with a 250 ms deadline and handed over already open, which
-  PubSubClient accepts. Failure costs a 2 ms pass now instead of a 4536 ms one.
-- Retained discovery outlives the board, so deleting a fixture or a scene has to
-  withdraw it explicitly or the entity stays in Home Assistant forever.
-
-Still worth doing here: the emergency stop as a button entity, and per-channel
-state is published on change but not republished on reconnect, so Home Assistant
-can hold a stale value until the next move.
-
-## Batch 5
-
-~~Done.~~ Settings > Config > Firmware takes a `.bin` and writes it to the spare
-application partition. The data partition is not touched, so fixtures, scenes,
-groups, labels and network settings come back exactly as they were. Verified by
-doing it three times.
-
-The change that made it possible: **the web UI now lives inside the firmware**,
-emitted by `tools/pack_web.py` as C arrays in `src/web_assets.cpp`. With the page
-on LittleFS there was no way to update the two together, since flashing firmware
-alone leaves an old page talking to a new API and flashing the filesystem writes
-over the settings. LittleFS now holds config and nothing else. Costs 54 KB of
-program space, 79% to 84% of the partition.
-
-**GitHub releases are fetched by the browser, not the board.** The board would
-need a certificate bundle in flash, which goes stale and costs another 65 KB,
-and skipping the check would mean accepting firmware from anything able to sit
-in the middle of that connection. Stated in the UI: a board with no laptop
-nearby cannot update itself.
-
-`.github/workflows/firmware.yml` builds all four environments on every push and
-publishes `firmware-<target>.bin` for each on a `v*` tag, after checking the tag
-agrees with `src/version.h`. **It has never run**: that needs a push.
-
-Worth adding later: a factory image (bootloader, partition table and app in one
-file) so a first flash does not need PlatformIO.
-
-## Batch 6
-
-A real wiki, one Markdown file per subject: serial, websocket, HTTP, MQTT, lite
-devices, EZ devices, scenes, groups, wiring.
-
-## Batch 7
-
-Confirmation phase first, then merge to `main` and release the ESP32 binary for
-the GitHub updater.
-
-## Loose ends
-
-- `.env` still labels the DMX pins `D4` and `D3`, left from the CircuitPython
-  line. They work, since only the digits are read, but the labels lie on an
-  S2 Mini. Should be `IO4` and `IO18`.
-- `PAR 2` and `Lyre` are on addresses 24 and 50 with channels inherited from a
+- **The release CI needs watching on its first run.** Until batch 7 it had never
+  executed once: the branch was local and the repository carried no tags. It is
+  now manual, owner-only, and composes its own `DD-MM-YYYY-VX.Y.Z` tag from
+  `dev.env`, so what wants confirming on the first run is the whole chain rather
+  than one step: four builds green, each image reporting the version it claims,
+  the tag pushed, and four `firmware-<target>.bin` assets under it with the names
+  the updater looks for. Read the run rather than assuming it.
+- `src/version.h` still falls back to `0.2.0` while `dev.env` says `0.3.0`. That is
+  by design, since the `-D` from `dev.env` always wins and the header exists for a
+  build without it, but the two do drift apart with every release and a reader
+  will eventually take the stale one for the truth.
+- **The UI screenshots are stale.** Everything in `docs/images/` was captured on
+  23 and 24 July 2026, before EZ cards, scenes, groups and the renamed Network
+  panel existed, so `ui-home.png` shows a navigation bar that no longer matches
+  the product. `ui-devices.png`, `ui-settings.png` and `ui-info.png` are unused
+  and equally old. Needs retaking on a real board, at which point the README can
+  show more than one.
+- `.env` still labels the DMX pins `D4` and `D3`, left over from the
+  CircuitPython line. They work, since only the digits are read, but the labels
+  lie on an S2 Mini. Should be `IO4` and `IO18`.
+- `PAR 2` and `Lyre` sit on addresses 24 and 50 with channels inherited from a
   duplication. Placeholders, not a real patch.
-- MQTT has never been pointed at a broker.
 - The ESP8266 targets are **beta**. They compile, and nothing since the C++
   rewrite has run on the hardware. RAM is at 51% before a client connects, so the
   websocket and several browsers at once are what to watch first. Its OTA path is
   written but untried, and unlike the ESP32 it has no room for two full
   application images unless the flash layout is changed.
-- The README roadmap still asks for a websocket and still says there is no
-  authentication. Both shipped.

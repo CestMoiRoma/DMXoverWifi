@@ -48,7 +48,7 @@ void EthernetManager::load() {
   _staticIp = (const char*)(doc["static_ip"] | "");
   _staticNetmask = (const char*)(doc["static_netmask"] | "255.255.255.0");
   _staticGateway = (const char*)(doc["static_gateway"] | "");
-  _staticDns = (const char*)(doc["static_dns"] | "1.1.1.1");
+  _staticDns = (const char*)(doc["static_dns"] | DEFAULT_DNS);
 }
 
 void EthernetManager::begin() {
@@ -70,7 +70,7 @@ void EthernetManager::begin() {
       return;
     }
     if (!netmask.fromString(_staticNetmask)) netmask.fromString("255.255.255.0");
-    if (!dns.fromString(_staticDns)) dns.fromString("1.1.1.1");
+    if (!dns.fromString(_staticDns)) dns.fromString(DEFAULT_DNS);
     Ethernet.begin(mac, ip, dns, gateway, netmask);
     _started = true;
   } else if (Ethernet.begin(mac, DHCP_TIMEOUT_MS, DHCP_RESPONSE_TIMEOUT_MS) == 1) {

@@ -13,7 +13,7 @@
 #endif
 
 static const char* DEFAULT_NETMASK = "255.255.255.0";
-static const char* FALLBACK_HOSTNAME = "esp-dmx";
+static const char* FALLBACK_HOSTNAME = DEFAULT_HOSTNAME;
 
 // DNS labels allow letters, digits and hyphens only, and cannot start or end
 // with one. Anything else in the configured hostname is folded to a hyphen so a
@@ -50,7 +50,7 @@ static WifiNet netFromJson(JsonObjectConst n) {
   net.static_ip = (const char*)(n["static_ip"] | "");
   net.static_netmask = (const char*)(n["static_netmask"] | DEFAULT_NETMASK);
   net.static_gateway = (const char*)(n["static_gateway"] | "");
-  net.static_dns = (const char*)(n["static_dns"] | "1.1.1.1");
+  net.static_dns = (const char*)(n["static_dns"] | DEFAULT_DNS);
   return net;
 }
 
@@ -193,7 +193,7 @@ void WifiManager::applyAddressing(const WifiNet& net) {
   if (!ip.fromString(net.static_ip)) return;
   if (!gateway.fromString(net.static_gateway)) return;
   if (!netmask.fromString(net.static_netmask)) netmask.fromString(DEFAULT_NETMASK);
-  if (!dns.fromString(net.static_dns)) dns.fromString("1.1.1.1");
+  if (!dns.fromString(net.static_dns)) dns.fromString(DEFAULT_DNS);
   WiFi.config(ip, gateway, netmask, dns);
 }
 

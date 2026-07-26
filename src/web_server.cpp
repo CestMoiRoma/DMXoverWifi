@@ -9,7 +9,7 @@
 #include "settings_store.h"
 #include "version.h"
 
-static const char* REPO_URL = "https://github.com/CestMoiRoma/DMXoverWifi";
+// REPO_URL, AUTHOR_NAME and AUTHOR_URL come from dev.env via config.h.
 
 // Published by the main loop; see the timing block in main.cpp.
 extern uint32_t loopRatePerSecond;
@@ -205,8 +205,8 @@ void DmxWebServer::registerRoutes() {
   // so there is deliberately no separate asset left to request.
   _server.on("/", HTTP_GET, [this]() { serveIndex(); });
   _server.on("/index.html", HTTP_GET, [this]() { serveIndex(); });
-  _server.on("/wiki.md", HTTP_GET,
-             [this]() { sendPacked(WEB_WIKI_GZ, WEB_WIKI_GZ_LEN, "text/plain"); });
+  // No local copy of the wiki: the UI links to the one on GitHub, which is
+  // searchable, current, and not costing a partition at 84% anything.
   // Browsers ask for this unprompted. Answering 204 costs one short response
   // instead of routing it through the 404 handler and its JSON body.
   _server.on("/favicon.ico", HTTP_GET, [this]() { _server.send(204, "image/x-icon", ""); });
@@ -612,11 +612,12 @@ void DmxWebServer::registerRoutes() {
     JsonDocument doc;
     doc["version"] = FW_VERSION;
     JsonObject author = doc["author"].to<JsonObject>();
-    author["name"] = "CestMoiRoma";
-    author["url"] = "https://github.com/CestMoiRoma";
+    author["name"] = AUTHOR_NAME;
+    author["url"] = AUTHOR_URL;
     doc["repo"] = REPO_URL;
+    // On GitHub only. A copy in flash was a build behind, unsearchable, and
+    // 13 KB of a partition that has better uses.
     doc["wiki_online"] = String(REPO_URL) + "/blob/main/WIKI.md";
-    doc["wiki_local"] = "/wiki.md";
     // The UI hides the DMX pin fields on the ESP8266, where the backend is
     // wired to Serial1/GPIO2 and the pin setting has no effect.
     doc["board"] = BOARD_NAME;
@@ -817,7 +818,7 @@ String DmxWebServer::buildEnvText() {
   out += "# --- MQTT ---\n";
   out += String("MQTT_ENABLED=") + boolEnv(mqtt["enabled"] | false) + "\n";
   out += String("MQTT_HOST=") + (const char*)(mqtt["host"] | "") + "\n";
-  out += "MQTT_PORT=" + String((int)(mqtt["port"] | 1883)) + "\n";
+  out += "MQTT_PORT=" + String((int)(mqtt["port"] | DEFAULT_MQTT_PORT)) + "\n";
   out += String("MQTT_USERNAME=") + (const char*)(mqtt["username"] | "") + "\n";
   out += String("MQTT_PASSWORD=") + (const char*)(mqtt["password"] | "") + "\n";
   out += String("MQTT_BASE_TOPIC=") + (const char*)(mqtt["base_topic"] | "") + "\n";

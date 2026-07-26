@@ -21,7 +21,7 @@ void MqttManager::setConfig(JsonObjectConst cfg) {
       int port = 0;
       if (kv.value().is<int>()) port = kv.value().as<int>();
       else if (kv.value().is<const char*>()) port = String(kv.value().as<const char*>()).toInt();
-      if (port <= 0 || port > 65535) port = 1883;
+      if (port <= 0 || port > 65535) port = DEFAULT_MQTT_PORT;
       _cfg["port"] = port;
       continue;
     }
@@ -45,11 +45,11 @@ void MqttManager::copyConfigTo(JsonObject out) const {
 }
 
 String MqttManager::baseTopic() const {
-  return String((const char*)(_cfg["base_topic"] | "dmxwifi"));
+  return String((const char*)(_cfg["base_topic"] | DEFAULT_MQTT_BASE_TOPIC));
 }
 
 String MqttManager::discoveryPrefix() const {
-  return String((const char*)(_cfg["discovery_prefix"] | "homeassistant"));
+  return String((const char*)(_cfg["discovery_prefix"] | DEFAULT_MQTT_DISCOVERY_PREFIX));
 }
 
 String MqttManager::uid(const String& deviceId, int offset) {
@@ -77,7 +77,7 @@ void MqttManager::applyServer() {
   String host = (const char*)(_cfg["host"] | "");
   if (host != _host) _ipValid = false;  // a new name deserves a new lookup
   _host = host;
-  _client.setServer(_host.c_str(), (uint16_t)(_cfg["port"] | 1883));
+  _client.setServer(_host.c_str(), (uint16_t)(_cfg["port"] | DEFAULT_MQTT_PORT));
   _client.setBufferSize(1024);  // HA discovery payloads exceed the 256 default
   _client.setKeepAlive(20);
   // Only the wait for the broker's CONNACK now: the TCP connection is made in
@@ -158,7 +158,7 @@ bool MqttManager::openSocket() {
     return false;
   }
 
-  uint16_t port = (uint16_t)(_cfg["port"] | 1883);
+  uint16_t port = (uint16_t)(_cfg["port"] | DEFAULT_MQTT_PORT);
 #if defined(ESP8266)
   _net.setTimeout(kTcpTimeoutMs);
   bool up = _net.connect(ip, port);
@@ -263,7 +263,7 @@ void MqttManager::statusToJson(JsonObject out) const {
 
   out["enabled"] = enabled;
   out["broker"] = host;
-  out["port"] = (int)(_cfg["port"] | 1883);
+  out["port"] = (int)(_cfg["port"] | DEFAULT_MQTT_PORT);
   out["base_topic"] = baseTopic();
   out["discovery_prefix"] = discoveryPrefix();
   out["client_id"] = clientId();
