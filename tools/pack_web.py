@@ -58,13 +58,22 @@ def c_array(name, raw):
 
 
 def write_if_changed(path, text):
-    """Rewriting an unchanged 500 KB source would rebuild it on every compile."""
+    """Rewriting an unchanged 500 KB source would rebuild it on every compile.
+
+    Written through a temporary file and moved into place, because `pio run`
+    with several environments runs them at once: two of these scripts firing
+    together would otherwise have one compiler reading the file while the other
+    is halfway through writing it. Found by a build that failed and then passed
+    unchanged, which is the kind of flake worth closing rather than retrying.
+    """
     if os.path.isfile(path):
         with open(path, "r", encoding="utf-8") as handle:
             if handle.read() == text:
                 return False
-    with open(path, "w", encoding="utf-8", newline="\n") as handle:
+    temporary = "%s.%d.tmp" % (path, os.getpid())
+    with open(temporary, "w", encoding="utf-8", newline="\n") as handle:
         handle.write(text)
+    os.replace(temporary, path)  # atomic on both Windows and POSIX
     return True
 
 

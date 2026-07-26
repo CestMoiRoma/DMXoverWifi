@@ -3012,24 +3012,17 @@ document.getElementById("saveguard-form").addEventListener("submit", async (e) =
 // board that answers one client at a time is long enough that a progress bar is
 // the difference between waiting and pulling the plug.
 
-document.getElementById("ota-install").addEventListener("click", () => {
-  const picker = document.getElementById("ota-file");
+function installFirmware(blob, name) {
   const status = document.getElementById("ota-status");
   const bar = document.getElementById("ota-progress");
-  const file = picker.files && picker.files[0];
-  if (!file) {
-    status.textContent = "Pick a firmware .bin first.";
-    return;
-  }
-  if (!confirm("Install " + file.name + "? The board reboots when it finishes.")) return;
 
   const body = new FormData();
-  body.append("firmware", file, file.name);
+  body.append("firmware", blob, name);
   const request = new XMLHttpRequest();
   request.open("POST", "/api/ota");
   bar.hidden = false;
   bar.value = 0;
-  status.textContent = "Sending " + Math.round(file.size / 1024) + " KB...";
+  status.textContent = "Sending " + Math.round(blob.size / 1024) + " KB...";
 
   request.upload.addEventListener("progress", (e) => {
     if (!e.lengthComputable) return;
@@ -3060,6 +3053,115 @@ document.getElementById("ota-install").addEventListener("click", () => {
     status.textContent = "The connection dropped before the upload finished. Nothing was installed.";
   });
   request.send(body);
+}
+
+document.getElementById("ota-install").addEventListener("click", () => {
+  const picker = document.getElementById("ota-file");
+  const file = picker.files && picker.files[0];
+  if (!file) {
+    document.getElementById("ota-status").textContent = "Pick a firmware .bin first.";
+    return;
+  }
+  if (!confirm("Install " + file.name + "? The board reboots when it finishes.")) return;
+  installFirmware(file, file.name);
+});
+
+// -- updates from a GitHub release --
+//
+// The browser fetches the release, not the board. It already has a set of
+// certificate authorities and keeps them current, where the board would need a
+// root bundle in flash that goes stale and, if it were skipped, would accept
+// firmware from anything that could sit in the middle of the connection. The
+// laptop does the trusting and the board only ever accepts bytes from the LAN.
+
+function versionParts(text) {
+  return String(text || "").replace(/^v/i, "").split(".").map((n) => parseInt(n, 10) || 0);
+}
+
+function isNewer(candidate, running) {
+  const a = versionParts(candidate);
+  const b = versionParts(running);
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) > (b[i] || 0);
+  }
+  return false;
+}
+
+document.getElementById("ota-check").addEventListener("click", async (e) => {
+  const button = e.currentTarget;
+  const status = document.getElementById("ota-release");
+  button.disabled = true;
+  status.textContent = "Asking GitHub...";
+  try {
+    const ota = await api("/api/ota/status");
+    const info = await api("/api/info");
+    const repo = String(info.repo || "").replace(/^https?:\/\/github\.com\//i, "").replace(/\/+$/, "");
+    const res = await fetch("https://api.github.com/repos/" + repo + "/releases/latest", {
+      headers: { Accept: "application/vnd.github+json" },
+    });
+    if (res.status === 404) {
+      // Also what a repository with no releases yet answers, which is not an
+      // error worth dressing up as one.
+      status.textContent = "No releases published yet. Running " + ota.running_version + ".";
+      return;
+    }
+    if (!res.ok) throw new Error("GitHub answered " + res.status);
+    const release = await res.json();
+    const asset = (release.assets || []).find((a) => a.name === ota.asset);
+
+    if (!isNewer(release.tag_name, ota.running_version)) {
+      status.textContent =
+        "Up to date. Running " + ota.running_version + ", latest release is " + release.tag_name + ".";
+      return;
+    }
+    if (!asset) {
+      status.textContent =
+        release.tag_name + " is out, but it carries no " + ota.asset + " for this board.";
+      return;
+    }
+
+    status.innerHTML = "";
+    status.appendChild(
+      el("span", {}, [
+        release.tag_name + " is available, running " + ota.running_version + ". " +
+          Math.round(asset.size / 1024) + " KB. ",
+      ])
+    );
+    const go = el("button", { type: "button", class: "secondary small" }, ["Download and install"]);
+    go.addEventListener("click", async () => {
+      go.disabled = true;
+      status.appendChild(el("span", {}, [" Fetching from GitHub..."]));
+      try {
+        const blob = await (await fetch(asset.browser_download_url)).blob();
+        installFirmware(blob, asset.name);
+      } catch (err) {
+        // GitHub serves release assets from a host that does not always allow a
+        // cross-origin read. Nothing to be done from here, so hand over the link
+        // and let the browser download it the ordinary way.
+        status.innerHTML = "";
+        status.appendChild(el("span", {}, ["This browser would not fetch the file for us. "]));
+        status.appendChild(
+          el("a", { href: asset.browser_download_url, target: "_blank", rel: "noreferrer" }, [
+            "Download " + asset.name,
+          ])
+        );
+        status.appendChild(el("span", {}, [" then pick it above and press Install."]));
+      }
+    });
+    status.appendChild(go);
+    if (release.html_url) {
+      status.appendChild(
+        el("a", { href: release.html_url, target: "_blank", rel: "noreferrer", class: "hint" }, [
+          " release notes",
+        ])
+      );
+    }
+  } catch (err) {
+    status.textContent =
+      "Could not reach GitHub: " + err.message + ". This needs the browser to have internet access.";
+  } finally {
+    button.disabled = false;
+  }
 });
 
 document.getElementById("reboot-btn").addEventListener("click", async () => {

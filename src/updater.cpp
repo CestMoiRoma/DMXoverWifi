@@ -2,13 +2,21 @@
 
 #include <Arduino.h>
 
+#include "config.h"
 #include "version.h"
 
 void Updater::fail(const String& why) {
   _error = why;
   _busy = false;
   _ok = false;
+  // Two spellings of the same idea. The ESP8266 updater has no abort(), so the
+  // partial write is closed and the error flag cleared by hand.
+#if defined(ESP8266)
+  Update.end();
+  Update.clearError();
+#else
   Update.abort();
+#endif
 }
 
 bool Updater::beginUpload(const String& filename) {
@@ -62,7 +70,11 @@ bool Updater::writeChunk(const uint8_t* data, size_t len) {
 bool Updater::endUpload() {
   if (!_busy) return false;
   if (!Update.end(true)) {
+#if defined(ESP8266)
+    fail(String("the image was rejected: ") + Update.getErrorString());
+#else
     fail(String("the image was rejected: ") + Update.errorString());
+#endif
     return false;
   }
   _busy = false;
@@ -78,6 +90,9 @@ void Updater::abortUpload() {
 
 void Updater::statusToJson(JsonObject out) const {
   out["running_version"] = FW_VERSION;
+  // The asset name a release has to carry for this board to accept it.
+  out["target"] = FW_TARGET;
+  out["asset"] = String("firmware-") + FW_TARGET + ".bin";
   out["busy"] = _busy;
   out["ok"] = _ok;
   out["written"] = (uint32_t)_written;

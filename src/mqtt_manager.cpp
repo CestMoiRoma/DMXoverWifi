@@ -123,18 +123,17 @@ bool MqttManager::resolveHost(IPAddress& out) {
 
   IPAddress found;
   bool ok;
+#if !defined(ESP8266)
   if (_host.endsWith(".local")) {
     // A .local name is mDNS, not DNS. Asking a DNS server for it fails, and
-    // "homeassistant.local" is what most people will type.
-    String bare = _host.substring(0, _host.length() - 6);
-#if defined(ESP8266)
-    found = MDNS.queryHost(bare, 1000);
-    ok = found != INADDR_NONE && (uint32_t)found != 0;
-#else
-    found = MDNS.queryHost(bare, 1000);
+    // "homeassistant.local" is what most people will type. The ESP8266 mDNS
+    // responder cannot ask questions, only answer them, so that build falls
+    // through to DNS and reports the failure.
+    found = MDNS.queryHost(_host.substring(0, _host.length() - 6), 1000);
     ok = (uint32_t)found != 0;
+  } else
 #endif
-  } else {
+  {
     ok = WiFi.hostByName(_host.c_str(), found) == 1;
   }
   if (!ok) return false;

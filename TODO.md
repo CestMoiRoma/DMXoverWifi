@@ -205,9 +205,30 @@ can hold a stale value until the next move.
 
 ## Batch 5
 
-- **Over-the-air update**, in the spirit of ESPHome, leaving the data intact.
-- If possible, updating straight from a GitHub release, plus a CI pipeline that
-  builds the `.bin`.
+~~Done.~~ Settings > Config > Firmware takes a `.bin` and writes it to the spare
+application partition. The data partition is not touched, so fixtures, scenes,
+groups, labels and network settings come back exactly as they were. Verified by
+doing it three times.
+
+The change that made it possible: **the web UI now lives inside the firmware**,
+emitted by `tools/pack_web.py` as C arrays in `src/web_assets.cpp`. With the page
+on LittleFS there was no way to update the two together, since flashing firmware
+alone leaves an old page talking to a new API and flashing the filesystem writes
+over the settings. LittleFS now holds config and nothing else. Costs 54 KB of
+program space, 79% to 84% of the partition.
+
+**GitHub releases are fetched by the browser, not the board.** The board would
+need a certificate bundle in flash, which goes stale and costs another 65 KB,
+and skipping the check would mean accepting firmware from anything able to sit
+in the middle of that connection. Stated in the UI: a board with no laptop
+nearby cannot update itself.
+
+`.github/workflows/firmware.yml` builds all four environments on every push and
+publishes `firmware-<target>.bin` for each on a `v*` tag, after checking the tag
+agrees with `src/version.h`. **It has never run**: that needs a push.
+
+Worth adding later: a factory image (bootloader, partition table and app in one
+file) so a first flash does not need PlatformIO.
 
 ## Batch 6
 
@@ -227,9 +248,10 @@ the GitHub updater.
 - `PAR 2` and `Lyre` are on addresses 24 and 50 with channels inherited from a
   duplication. Placeholders, not a real patch.
 - MQTT has never been pointed at a broker.
-- The ESP8266 targets are **beta**. They compile again, after two real bugs
-  found by finally building them, but nothing since the C++ rewrite has run on
-  the hardware. RAM is at 48.8% before a client connects, so the websocket and
-  several browsers at once are what to watch first.
+- The ESP8266 targets are **beta**. They compile, and nothing since the C++
+  rewrite has run on the hardware. RAM is at 51% before a client connects, so the
+  websocket and several browsers at once are what to watch first. Its OTA path is
+  written but untried, and unlike the ESP32 it has no room for two full
+  application images unless the flash layout is changed.
 - The README roadmap still asks for a websocket and still says there is no
   authentication. Both shipped.

@@ -28,8 +28,20 @@
 // so the UI is never told a port the board is not on.
 #define WS_PORT_NUMBER 81
 
-// Config lives as JSON files under this LittleFS directory (written at runtime).
-// Static web assets live under /www (flashed from fsdata/ via `uploadfs`).
+// Which build this is, which is also the name of the release asset that fits
+// this board. Set per environment in platformio.ini; the fallback keeps a
+// hand-rolled build compiling.
+#ifndef FW_TARGET
+  #if defined(ESP8266)
+    #define FW_TARGET "d1mini"
+  #else
+    #define FW_TARGET "s2mini"
+  #endif
+#endif
+
+// Config lives as JSON files under this LittleFS directory. Nothing else is on
+// the filesystem any more: the web UI travels inside the firmware, so an update
+// never has to write over the partition holding these.
 #define DATA_DIR "/data"
 
 // Parse a pin label into a raw GPIO number: "IO4" -> 4, "GPIO18" -> 18,

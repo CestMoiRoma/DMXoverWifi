@@ -217,6 +217,16 @@
           this with the rig dark rather than mid-show.
         </p>
         <div class="form-actions start">
+          <button type="button" id="ota-check" class="secondary" data-i18n="btn.checkupdates">Check GitHub</button>
+        </div>
+        <p id="ota-release" class="hint"></p>
+        <p class="hint">
+          The release is fetched by this browser rather than by the board, which
+          keeps a set of certificate authorities the board would have to carry in
+          flash and let go stale. A board with no laptop nearby cannot update
+          itself; drop a .bin below instead.
+        </p>
+        <div class="form-actions start">
           <input type="file" id="ota-file" accept=".bin">
           <button type="button" id="ota-install" data-i18n="btn.install">Install</button>
         </div>

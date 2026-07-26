@@ -1,0 +1,107 @@
+# Builds every environment on each push, and turns a tag into a release the
+# boards can install from.
+#
+# The assets are named firmware-<FW_TARGET>.bin, which is what the board asks
+# for: Settings > Config > Firmware reads its own FW_TARGET and looks for that
+# exact name in the latest release. Renaming one here breaks the update button
+# rather than producing a helpful error, so the names are worth leaving alone.
+#
+# These are application images for over-the-air updates. A board being flashed
+# for the first time still goes over USB with `pio run -e s2mini -t upload`,
+# which writes the bootloader and the partition table too.
+
+name: firmware
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - environment: s2mini
+            asset: firmware-s2mini.bin
+          - environment: s2mini_headless
+            asset: firmware-s2mini-headless.bin
+          - environment: d1mini
+            asset: firmware-d1mini.bin
+          - environment: d1mini_headless
+            asset: firmware-d1mini-headless.bin
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # The toolchains are a few hundred megabytes and change only when the
+      # pinned platform does, so they are worth keeping between runs.
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio/.cache
+            ~/.platformio/packages
+            ~/.platformio/platforms
+          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+          restore-keys: pio-${{ runner.os }}-
+
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+
+      # No .env in the checkout, which is deliberate: tools/env_to_fsdata.py
+      # seeds nothing and the firmware falls back to its own defaults, so a
+      # public binary never carries somebody's WiFi password.
+      - name: Build ${{ matrix.environment }}
+        run: pio run -e ${{ matrix.environment }}
+
+      - name: Collect the image
+        run: |
+          mkdir -p dist
+          cp .pio/build/${{ matrix.environment }}/firmware.bin dist/${{ matrix.asset }}
+          ls -l dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # A tag that disagrees with the firmware it contains would leave every
+      # board thinking an update is available forever, since the version it
+      # reports after installing would still be the old one.
+      - name: Check the tag matches src/version.h
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          declared=$(sed -n 's/.*FW_VERSION "\(.*\)".*/\1/p' src/version.h)
+          echo "tag $tag, version.h $declared"
+          test "$tag" = "$declared"
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.bin
+          generate_release_notes: true
