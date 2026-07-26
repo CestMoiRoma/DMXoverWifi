@@ -3074,8 +3074,18 @@ document.getElementById("ota-install").addEventListener("click", () => {
 // firmware from anything that could sit in the middle of the connection. The
 // laptop does the trusting and the board only ever accepts bytes from the LAN.
 
+// A release tag carries the build date in front of the version, as in
+// 26-07-2026-V0.3.0, because the useful question about a rebuild is when it was
+// made. So the version is the last dotted run of digits in the tag rather than
+// the whole of it: splitting the tag naively makes the date's leading 26 the
+// major number, which is greater than anything a board will ever run, and the
+// same release is then offered for ever.
 function versionParts(text) {
-  return String(text || "").replace(/^v/i, "").split(".").map((n) => parseInt(n, 10) || 0);
+  const raw = String(text || "");
+  const dotted = raw.match(/(\d+(?:\.\d+)+)\s*$/);
+  return (dotted ? dotted[1] : raw.replace(/^v/i, ""))
+    .split(".")
+    .map((n) => parseInt(n, 10) || 0);
 }
 
 function isNewer(candidate, running) {

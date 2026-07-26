@@ -1,5 +1,10 @@
-# Builds every environment on each push, and turns a tag into a release the
-# boards can install from.
+# Cuts a release. By hand, and by the owner only.
+#
+# There is no automatic trigger: a push builds nothing here. A tag is not
+# something anyone writes either. The workflow reads FW_VERSION out of dev.env,
+# builds the four images, tags the commit it built and publishes. One button for
+# the whole job, and it cannot produce a release whose tag disagrees with the
+# firmware inside it, because nobody types the tag.
 #
 # The assets are named firmware-<FW_TARGET>.bin, which is what the board asks
 # for: Settings > Config > Firmware reads its own FW_TARGET and looks for that
@@ -13,14 +18,62 @@
 name: firmware
 
 on:
-  push:
-    branches: [main]
-    tags: ["v*"]
-  pull_request:
   workflow_dispatch:
 
+# Read-only by default. Only the release job is trusted with more, and only for
+# as long as it runs.
+permissions:
+  contents: read
+
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
+      tag: ${{ steps.tag.outputs.tag }}
+
+    steps:
+      # workflow_dispatch already needs write access to the repository, so this is
+      # the second lock rather than the only one: a collaborator who can push
+      # still cannot cut a release.
+      - name: Only the owner cuts releases
+        if: github.actor != github.repository_owner
+        run: |
+          echo "::error::${{ github.actor }} is not ${{ github.repository_owner }}. Releases are the owner's to cut."
+          exit 1
+
+      - uses: actions/checkout@v4
+
+      # Date first, version second, as in 26-07-2026-V0.3.0. The date says when
+      # the binaries were built, which is the question asked of a release that
+      # carries no source change; the version is what the update check compares.
+      - name: Compose the tag from dev.env
+        id: tag
+        run: |
+          version=$(sed -n 's/^FW_VERSION=//p' dev.env | tr -d ' "\r' | tr -d "'")
+          case "$version" in
+            '' | *[!0-9.]*)
+              echo "::error::dev.env FW_VERSION is '$version', which is not a version"
+              exit 1
+              ;;
+          esac
+          tag="$(date -u +%d-%m-%Y)-V$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "releasing $version as $tag"
+
+      # Two releases of the same version on the same day would collide, and the
+      # second would silently attach its binaries to the first one's tag.
+      - name: Refuse a tag that already exists
+        run: |
+          tag='${{ steps.tag.outputs.tag }}'
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            echo "::error::tag $tag already exists. Bump FW_VERSION in dev.env."
+            exit 1
+          fi
+
   build:
+    needs: prepare
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -63,6 +116,17 @@ jobs:
       - name: Build ${{ matrix.environment }}
         run: pio run -e ${{ matrix.environment }}
 
+      # The version the board will report has to be the one the tag claims, and
+      # the only way to know is to ask the binary. A -D that failed to arrive
+      # would otherwise ship as a release every board offers itself for ever.
+      - name: Check the image reports ${{ needs.prepare.outputs.version }}
+        run: |
+          version='${{ needs.prepare.outputs.version }}'
+          if ! grep -qa -- "$version" ".pio/build/${{ matrix.environment }}/firmware.bin"; then
+            echo "::error::firmware.bin for ${{ matrix.environment }} does not contain $version"
+            exit 1
+          fi
+
       - name: Collect the image
         run: |
           mkdir -p dist
@@ -76,8 +140,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [prepare, build]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -85,15 +148,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # A tag that disagrees with the firmware it contains would leave every
-      # board thinking an update is available forever, since the version it
-      # reports after installing would still be the old one.
-      - name: Check the tag matches dev.env
+      # Annotated, and on the commit that was actually built rather than on
+      # whatever main has moved to since.
+      - name: Tag the commit that was built
+        env:
+          TAG: ${{ needs.prepare.outputs.tag }}
+          VERSION: ${{ needs.prepare.outputs.version }}
         run: |
-          tag="${GITHUB_REF_NAME#v}"
-          declared=$(sed -n 's/^FW_VERSION=//p' dev.env | tr -d '"'"'"' \r')
-          echo "tag $tag, dev.env $declared"
-          test "$tag" = "$declared"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "Firmware $VERSION, built by the release workflow"
+          git push origin "refs/tags/$TAG"
 
       - uses: actions/download-artifact@v4
         with:
@@ -103,5 +168,23 @@ jobs:
       - name: Publish
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          name: ${{ needs.prepare.outputs.tag }}
           files: dist/*.bin
-          generate_release_notes: true
+          fail_on_unmatched_files: true
+          body: |
+            New Release, Automated Binaries building and publish for Over Github updates (OGU)
+
+            Firmware version `${{ needs.prepare.outputs.version }}`.
+
+            | Asset | Board and build |
+            |---|---|
+            | `firmware-s2mini.bin` | ESP32-S2, full web UI |
+            | `firmware-s2mini-headless.bin` | ESP32-S2, API only |
+            | `firmware-d1mini.bin` | ESP8266, full web UI. Beta |
+            | `firmware-d1mini-headless.bin` | ESP8266, API only. Beta |
+
+            Install from the board: **Settings**, **Config**, **Firmware**, **Check
+            GitHub**. It picks the asset matching this board on its own and refuses
+            the others. These are application images; a first flash still goes over
+            USB.

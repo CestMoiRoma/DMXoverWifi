@@ -65,13 +65,28 @@ the partition table too.
 
 1. Change `FW_VERSION` in [dev.env](../../dev.env). That is the only place it
    lives: the firmware, the update check and the release workflow all read it.
-2. Commit, then tag `vX.Y.Z` and push the tag.
+2. Commit and push.
+3. Run the **firmware** workflow by hand, from the repository's Actions tab.
 
-[.github/workflows/firmware.yml](../../.github/workflows/firmware.yml) builds all
-four environments on every push. On a `v*` tag it also checks the tag agrees with
-`dev.env` and publishes the four images. A tag that disagreed would leave every
-board thinking an update was available for ever, since the version reported after
-installing would still be the old one.
+That is the whole of it. Nobody writes a tag, and no push produces a release on
+its own.
+
+[.github/workflows/firmware.yml](../../.github/workflows/firmware.yml) has no
+trigger but `workflow_dispatch`, and refuses to run for anyone but the repository
+owner. When the owner starts it, it reads `FW_VERSION`, builds all four
+environments, checks each image actually reports that version, tags the commit it
+built as `DD-MM-YYYY-VX.Y.Z` and publishes the four images under that tag.
+
+Two things follow from the shape of it. The tag cannot disagree with the firmware
+inside the release, because the workflow composes it from the same line the
+firmware compiles: a release whose tag claimed a version the board did not report
+after installing would offer itself for ever. And the date in front means a
+rebuild of the same version is a visibly different release, which is the useful
+question about a binary that carries no source change. The update check reads the
+version out of the tail of the tag and ignores the date.
+
+Releasing the same version twice on one day is refused rather than quietly
+attached to the existing tag. Bump `FW_VERSION` instead.
 
 ## The ESP8266
 
