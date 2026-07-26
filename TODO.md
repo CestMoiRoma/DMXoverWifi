@@ -192,6 +192,10 @@ the [ESPDMX](https://github.com/CestMoiRoma/ESPDMX) roadmap.
 
 ## Reliability and operations
 
+- **Prove the ESP8266 transmit path on hardware.** The break, the mark and the
+  chunked feed are written to the standard and build clean, but no D1 mini has
+  run them since they replaced the library they were written to get rid of. A
+  scope on `GPIO2`, or one fixture holding a level without flicker, settles it.
 - **A watchdog.** If the main loop wedges the rig freezes on its last frame and
   nothing recovers it.
 - **Bring back the off-board test suite.** The CircuitPython line had 320 tests

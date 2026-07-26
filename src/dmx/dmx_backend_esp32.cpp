@@ -3,8 +3,8 @@
 // Thin adapter over the esp_dmx library (someweisguy/esp_dmx, v4), pulled in as
 // a lib_deps dependency on the s2mini* environments only. esp_dmx drives the
 // break and mark-after-break in the hardware UART driver, so the timing does not
-// depend on how fast a software call returns. ESPDMX is ESP8266-only and is not
-// used here.
+// depend on how fast a software call returns, and there is nothing for poll() to
+// do here. The ESP8266 has no such driver and clocks its own frames out.
 
 #if !defined(ESP8266)
 
@@ -40,6 +40,10 @@ void sendFrame(const uint8_t* frame, uint16_t len) {
   // esp_dmx expects.
   dmx_write(DMX_PORT, frame, len);
   dmx_send(DMX_PORT);
+}
+
+void poll() {
+  // esp_dmx clocks the frame out of the hardware driver; nothing to feed.
 }
 
 }  // namespace dmxbackend

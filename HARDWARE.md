@@ -118,26 +118,37 @@ the DMX interrupt while a universe is flowing.
 > second core. It is the far larger RAM, native USB, faster clock, and above all
 > the hardware UART driver esp_dmx uses to keep DMX timing off the main loop.
 
-## DMX output libraries
+## DMX output drivers
 
 DMX transmit is the one place the two chips run different code, each behind the
 same `dmxbackend::` facade so nothing else in the firmware notices:
 
-| Chip | Library | Scope in `platformio.ini` |
+| Chip | Driver | Where |
 |---|---|---|
-| ESP32 family | [esp_dmx](https://github.com/someweisguy/esp_dmx) (Mitch Weisbrod) | `s2mini*` envs only |
-| ESP8266 | [ESPDMX](https://github.com/Rickgg/ESP-Dmx) (Rick) | `d1mini*` envs only |
+| ESP32 family | [esp_dmx](https://github.com/someweisguy/esp_dmx) (Mitch Weisbrod) | `lib_deps` on the `s2mini*` envs only |
+| ESP8266 | Ours | [src/dmx/dmx_backend_esp8266.cpp](src/dmx/dmx_backend_esp8266.cpp) |
 
-Each dependency is pinned to its own environments, because esp_dmx does not run
-on the ESP8266 and ESPDMX does not run on the ESP32. esp_dmx also carries the
-input and RDM support the roadmap needs. **ESPDMX is transmit only**, and
-literally so: its `read()` returns a slot from the library's own buffer and never
-looks at the wire.
+esp_dmx does not run on the ESP8266, which is why the dependency is pinned to its
+own environments. It also carries the input and RDM support the roadmap needs, and
+it hands the frame to a hardware UART driver, so the timing does not depend on how
+soon the main loop comes back.
 
-So an ESP8266 that has to receive needs a different driver rather than a patch to
-this one. [LXESP8266DMX](https://github.com/claudeheintz/LXESP8266DMX)
-(BSD-3-Clause) does both directions on this chip and would sit behind the same
-`dmxbackend::` facade, at the cost described above.
+The ESP8266 has no such driver, so the backend is our own UART1 code: it holds TX
+low with the UART's break bit, then feeds the FIFO a chunk per loop pass rather
+than writing 513 slots in one blocking call. Only the break and the mark block,
+around 200 µs of the 22.6 ms a frame spends on the wire. Chunking is invisible to
+a receiver, since DMX allows up to a second of mark between slots.
+
+It replaced [ESPDMX](https://github.com/Rickgg/ESP-Dmx) (Rick), which is
+**GPL-3.0-or-later**. Linking it made a combined work that the GPL requires to be
+redistributable under the GPL, which [the licence here](LICENSE) is not, so no
+ESP8266 binary could be published. Writing the transmit path ourselves settled
+that rather than working around it.
+
+**It transmits and does not receive**, and on this chip that is structural: UART1
+has no RX pin at all. An ESP8266 that has to read a universe needs UART0, the one
+the serial console sits on. [LXESP8266DMX](https://github.com/claudeheintz/LXESP8266DMX)
+(BSD-3-Clause) does exactly that split and would sit behind the same facade.
 
 ## Choosing a board
 

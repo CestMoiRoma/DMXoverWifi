@@ -33,6 +33,10 @@ void DmxDriver::sendFrame() {
 }
 
 void DmxDriver::refreshIfDue() {
+  // Every pass, not only when a frame is due: a backend that clocks the frame
+  // out itself gets the loop back here to feed the next chunk of it.
+  dmxbackend::poll();
+
   uint32_t now = millis();
   if (now - _lastSend >= FRAME_INTERVAL_MS) {
     sendFrame();

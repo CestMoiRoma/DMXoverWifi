@@ -18,8 +18,8 @@
 // These are what a board falls back to, not what it necessarily runs: anything
 // saved in its settings, or seeded from a .env, is read first.
 
-// On ESP8266 the DMX output is fixed to Serial1 (UART1 TX = GPIO2) by the
-// ESPDMX-derived backend, so the tx pin is only a label there. The ESP32
+// On ESP8266 the DMX output is fixed to Serial1 (UART1 TX = GPIO2), which is the
+// only pin that UART can transmit on, so the tx pin is a label there. The ESP32
 // backend honours the configured pin as a real GPIO.
 #if defined(ESP8266)
   #define BOARD_NAME "esp8266"

@@ -288,5 +288,5 @@ Successor to [ESPDMX](https://github.com/CestMoiRoma/ESPDMX) by
 [CestMoiRoma](https://github.com/CestMoiRoma). The wiring diagram comes from that
 project. DMX output is driven by the
 [esp_dmx](https://github.com/someweisguy/esp_dmx) library by Mitch Weisbrod on
-the ESP32, and the [ESPDMX](https://github.com/Rickgg/ESP-Dmx) library by Rick on
-the ESP8266.
+the ESP32; on the ESP8266 it is our own UART1 driver, described in
+[HARDWARE.md](HARDWARE.md).
