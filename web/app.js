@@ -1498,14 +1498,15 @@ function ezWidgets(t) {
   else if (kind === "motion") main = motionPad(t);
   if (!main) return [];
 
+  // Short labels here: a standing fader is 5rem wide, and "Master dimmer" over
+  // it either wraps to three lines or widens the column until the pair no longer
+  // sits beside the widget. The flat faders below keep the long names.
   const faders = [
-    roleFader(t, "dimmer", "Master dimmer", false, true),
+    roleFader(t, "dimmer", "Dimmer", false, true),
     roleFader(t, "strobe", "Strobe", false, true),
   ];
   if (kind === "motion") {
-    faders.push(
-      roleFader(t, "speed", "Movement speed", t.setting("reverse_speed", "") === "1", true)
-    );
+    faders.push(roleFader(t, "speed", "Speed", t.setting("reverse_speed", "") === "1", true));
   }
   const standing = faders.filter(Boolean);
 

@@ -457,7 +457,7 @@ form { margin: 0; }
    wheel, which is exactly what this width exists to prevent. */
 .device-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(24rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(25rem, 1fr));
   gap: 0.75rem;
   align-items: start;
 }
@@ -701,7 +701,16 @@ button.danger:hover { background: #b91c1c; border-color: #b91c1c; }
    not from how wide the faders would like to be, so three faders beside a
    joystick wrap among themselves into two columns instead of dropping the whole
    block under the widget. It still grows to whatever room is left. */
-.ez-layout .fader-row { flex: 1 1 8rem; min-width: 0; margin-top: 0; }
+.ez-layout .fader-row { flex: 1 1 9rem; min-width: 0; margin-top: 0; gap: 0.75rem; }
+
+/* What actually decides whether two faders sit side by side is the label, not
+   the slider: a column flex item is as wide as its widest child, so "Master
+   dimmer" on one line made a 5rem slider into a 6rem one and the pair no longer
+   fit. Capped and allowed to wrap, so a long channel name costs a second line
+   rather than the layout. */
+.ez-layout .fader { width: 5rem; }
+.ez-layout .fader > label { max-width: 100%; overflow-wrap: anywhere; }
+.ez-layout .pct-col button { padding: 0.1rem 0.3rem; }
 
 /* A card that is only a control: flat fader, percentages under it. */
 .fader.flat { display: block; width: 100%; margin: 0.6rem 0; }
