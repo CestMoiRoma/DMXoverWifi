@@ -3068,11 +3068,95 @@ document.getElementById("ota-install").addEventListener("click", () => {
 
 // -- updates from a GitHub release --
 //
-// The browser fetches the release, not the board. It already has a set of
-// certificate authorities and keeps them current, where the board would need a
-// root bundle in flash that goes stale and, if it were skipped, would accept
-// firmware from anything that could sit in the middle of the connection. The
-// laptop does the trusting and the board only ever accepts bytes from the LAN.
+// The browser reads the release and the board downloads it, and the split is not
+// arbitrary. GitHub serves release assets with no Access-Control-Allow-Origin
+// header, on the download URL and on the API asset endpoint alike, so a page
+// served from the board cannot read those bytes however it asks: the file can
+// reach the disk but not the script.
+//
+// What the browser can read is api.github.com, which does allow cross-origin
+// reads and publishes a sha256 for every asset. So the browser takes the digest
+// over a connection its own certificate store verified, hands it to the board
+// with the URL, and the board throws away any download that does not match it.
+// Integrity comes from the hash rather than from the transport, which is why the
+// board needs no root certificates in flash. See src/updater.h.
+
+// Hands over the download link for the two cases the one-press path cannot cover:
+// a board that cannot fetch for itself, and a release with no digest to check
+// against. Installing unverified is not one of the options.
+function handOverTheLink(asset, status, why) {
+  status.innerHTML = "";
+  status.appendChild(
+    el("span", {}, [why ? "Cannot install this one directly: " + why + ". " : "This board cannot fetch for itself. "])
+  );
+  status.appendChild(
+    el("a", { href: asset.browser_download_url, target: "_blank", rel: "noreferrer" }, [
+      "Download " + asset.name,
+    ])
+  );
+  status.appendChild(el("span", {}, [" then pick it above and press Install."]));
+}
+
+// The board is doing the downloading, so there is no request to watch: it answers
+// at once and the progress lives in /api/ota/status. Polling once a second is
+// plenty for a bar, and cheap on a board that also has a rig to drive.
+async function fetchOnBoard(asset, status) {
+  const bar = document.getElementById("ota-progress");
+  status.innerHTML = "";
+  status.textContent = "Asking the board to fetch " + asset.name + "...";
+
+  try {
+    await api("/api/ota/fetch", "POST", {
+      url: asset.browser_download_url,
+      sha256: asset.digest,
+    });
+  } catch (err) {
+    status.textContent = "The board would not start: " + err.message;
+    return;
+  }
+
+  bar.hidden = false;
+  bar.value = 0;
+  const total = asset.size || 0;
+
+  for (;;) {
+    await new Promise((r) => setTimeout(r, 1000));
+    let s;
+    try {
+      s = await api("/api/ota/status");
+    } catch (err) {
+      // The board reboots on its own once an install is sealed, so a poll that
+      // fails after the bytes were all written is success rather than failure.
+      status.textContent = "Lost contact with the board. If it was nearly done it is probably rebooting.";
+      return;
+    }
+    if (s.fetching) {
+      const done = s.written || 0;
+      bar.value = total ? Math.round((done / total) * 100) : 0;
+      status.textContent =
+        "The board is downloading, " + Math.round(done / 1024) + " KB" +
+        (total ? " of " + Math.round(total / 1024) + " KB" : "") + ". Do not power it off.";
+      continue;
+    }
+    if (s.error) {
+      bar.hidden = true;
+      status.textContent = "Failed: " + s.error + ".";
+      return;
+    }
+    if (s.ok) {
+      bar.value = 100;
+      status.textContent = "Downloaded, hash checked and written. Rebooting, this page reloads in 15 s.";
+      try {
+        await api("/api/reboot", "POST");
+      } catch (err) {
+        // Expected: it reboots rather than finishing the response.
+      }
+      setTimeout(() => location.reload(), 15000);
+      return;
+    }
+    // Neither running, nor failed, nor done: the board has not started yet.
+  }
+}
 
 // A release tag carries the build date in front of the version, as in
 // 26-07-2026-V0.3.0, because the useful question about a rebuild is when it was
@@ -3140,22 +3224,13 @@ document.getElementById("ota-check").addEventListener("click", async (e) => {
     const go = el("button", { type: "button", class: "secondary small" }, ["Download and install"]);
     go.addEventListener("click", async () => {
       go.disabled = true;
-      status.appendChild(el("span", {}, [" Fetching from GitHub..."]));
-      try {
-        const blob = await (await fetch(asset.browser_download_url)).blob();
-        installFirmware(blob, asset.name);
-      } catch (err) {
-        // GitHub serves release assets from a host that does not always allow a
-        // cross-origin read. Nothing to be done from here, so hand over the link
-        // and let the browser download it the ordinary way.
-        status.innerHTML = "";
-        status.appendChild(el("span", {}, ["This browser would not fetch the file for us. "]));
-        status.appendChild(
-          el("a", { href: asset.browser_download_url, target: "_blank", rel: "noreferrer" }, [
-            "Download " + asset.name,
-          ])
-        );
-        status.appendChild(el("span", {}, [" then pick it above and press Install."]));
+      // Two paths, and which one is available is the board's to say. A board that
+      // can fetch for itself needs the digest as well as the URL, so an asset
+      // published without one falls back rather than installing unverified.
+      if (ota.can_fetch && asset.digest) {
+        await fetchOnBoard(asset, status);
+      } else {
+        handOverTheLink(asset, status, ota.can_fetch ? "that release published no sha256" : null);
       }
     });
     status.appendChild(go);

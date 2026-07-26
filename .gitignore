@@ -30,3 +30,8 @@ System Volume Information/
 
 # Python bytecode from the desktop tool
 tools/__pycache__/
+
+# Local working copies. TODO.local.md is the private twin of TODO.md: same
+# content, plus recommendations addressed to the maintainer. TODO.md is published,
+# so anything written *to* somebody belongs here instead.
+*.local.md

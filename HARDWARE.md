@@ -43,7 +43,7 @@ with the esp8266 path, with DMX output fixed to GPIO2.
 
 | Feature | ESP32 family | ESP8266 |
 |---|---|---|
-| DMX **input** (read a lighting desk) | ✅ via esp_dmx | ❌ |
+| DMX **input** (read a lighting desk) | ✅ via esp_dmx | ⚠️ possible, but it costs the serial console. See below |
 | **RDM** (E1.20) | ✅ via esp_dmx | ❌ |
 | **Several universes** per board | ✅ one per hardware UART | ❌ single usable TX UART |
 | Art-Net / sACN input to DMX out | ✅ | ✅ (output side only) |
@@ -51,9 +51,12 @@ with the esp8266 path, with DMX output fixed to GPIO2.
 | Scenes, emergency stop, grand master, profiles | ✅ | ✅ |
 | OTA firmware update | ✅ | ✅ |
 
-The DMX-side roadmap (input, RDM, multiple universes) is **ESP32 only**. It is a
-chip limit, not a missing library: no ESP8266 library can add it, for the reasons
-below.
+RDM and multiple universes are **ESP32 only**, and that is a chip limit rather
+than a missing library: no ESP8266 library can add them, for the reasons below.
+**DMX input is the exception.** The ESP8266 can receive DMX, and what stands in
+the way is a design choice about the serial console rather than the silicon. That
+is spelled out below too, because the difference decides whether it is worth
+attempting.
 
 ## Why they differ
 
@@ -66,17 +69,49 @@ below.
 | Hardware UARTs | 2 | 3 | 2 | 2, but UART1 is TX-only |
 | ESP-IDF RS-485 UART driver | yes | yes | yes | no |
 
-The ESP8266's ceiling comes from three walls that no library gets around:
+Two of the ESP8266's limits are walls that no library gets around:
 
-- **One usable DMX UART.** UART1 has TX only (`GPIO2`), which is the single DMX
-  output. UART0's pins are the console and boot log. There is no second clean UART
-  for a second universe, and no receive pin free for reliable DMX input.
 - **One core, shared with WiFi.** The DMX frame is generated in software on the
   same core that runs the network stack, so it picks up jitter under load. RDM,
   which needs microsecond-tight bus turnaround, is not realistic here.
 - **No RS-485 UART driver.** The esp_dmx library is built on the ESP-IDF UART
   driver, which only exists on the ESP32 family. That driver is what lets the
   ESP32 offload DMX break and frame timing to the peripheral instead of the loop.
+
+The third is not a wall, and calling it one would be wrong:
+
+- **Two UARTs, one of which is the console.** UART1 has TX only (`GPIO2`), and that
+  is the DMX output. Everything else the chip has to offer lives on UART0, which is
+  where the console and the boot log are, so a second universe has nowhere to go.
+  **DMX input, however, is a different question.** UART0's receiver is perfectly
+  capable of it: the ESP8266 has a hardware break detector, the `UIBD` bit in the
+  `U0IS` interrupt status register, and
+  [LXESP8266DMX](https://github.com/claudeheintz/LXESP8266DMX) uses exactly that to
+  read a universe at 250 kbaud 8N2 on `GPIO3`, output on UART1 and input on UART0
+  running at the same time.
+
+What DMX input costs on that chip is the console, and that part is real. The D1
+mini reaches its USB-serial chip over `GPIO1` and `GPIO3`, and a UART has one baud
+divider for both directions, so pointing UART0 at DMX takes the console with it.
+Output can still be read on a terminal set to 250000, but nothing can be typed
+back, because that wire is carrying DMX. An ESP8266 that reads DMX is an ESP8266
+configured over WiFi and nothing else.
+
+**A software UART does not rescue this, and it is the obvious next thought.**
+[EspSoftwareSerial](https://github.com/plerup/espsoftwareserial) tops out at
+115200 baud and is only dependable nearer 19200, because interrupt timing on this
+chip drifts under WiFi load. DMX wants 250000, held steady across 23 ms of
+back-to-back slots, with an 88 µs break measured rather than read from a flag, and
+no checksum or retransmission to hide a dropped bit. It is the wrong tool for that
+signal.
+
+The reverse is sound, though, if the console is what has to survive: `Serial.swap()`
+moves UART0 to `GPIO13`/`GPIO15`, leaving DMX input on hardware at `GPIO13`, DMX
+output on UART1 at `GPIO2`, and `GPIO1`/`GPIO3` free for a software console at
+19200 that still reaches the onboard USB chip. Input needs only RX, so nothing need
+hang off `GPIO15`, which has to stay low at boot. The costs are a slower console, a
+74880 baud ROM boot log that looks like noise, and the odd typed character lost to
+the DMX interrupt while a universe is flowing.
 
 > [!NOTE]
 > The ESP32-S2 is itself **single-core**, so its edge over the ESP8266 is not a
@@ -95,7 +130,14 @@ same `dmxbackend::` facade so nothing else in the firmware notices:
 
 Each dependency is pinned to its own environments, because esp_dmx does not run
 on the ESP8266 and ESPDMX does not run on the ESP32. esp_dmx also carries the
-input and RDM support the roadmap needs; ESPDMX is transmit only.
+input and RDM support the roadmap needs. **ESPDMX is transmit only**, and
+literally so: its `read()` returns a slot from the library's own buffer and never
+looks at the wire.
+
+So an ESP8266 that has to receive needs a different driver rather than a patch to
+this one. [LXESP8266DMX](https://github.com/claudeheintz/LXESP8266DMX)
+(BSD-3-Clause) does both directions on this chip and would sit behind the same
+`dmxbackend::` facade, at the cost described above.
 
 ## Choosing a board
 

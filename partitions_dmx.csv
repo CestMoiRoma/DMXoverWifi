@@ -1,0 +1,29 @@
+# Partition table for the 4 MB ESP32 targets.
+#
+# Why not the stock default.csv: it splits the flash into two 1.25 MB app slots
+# and a 1.4 MB data partition, and the split is the wrong way round for this
+# project. The data partition holds /data/*.json and nothing else since the web
+# UI moved into the firmware, which is a few kilobytes, while the application had
+# reached 83.5% of its slot before the board was given its own HTTPS client.
+#
+# So the app slots grow to 1.75 MB each and the filesystem drops to 448 KB, which
+# is still two orders of magnitude more than the config needs.
+#
+# Both app slots stay the same size on purpose. Over-the-air updates write to
+# whichever one is not running, so an image that fits one has to fit the other.
+#
+# The data partition is named spiffs, not littlefs: LittleFS.begin() looks for
+# that label by default, and renaming it here would leave the board unable to
+# find its own settings.
+#
+# Changing this file is not an over-the-air change. A running board keeps the
+# table already on its flash, so the new layout only takes effect after a USB
+# `pio run -e s2mini -t upload`, and that moves the filesystem to a new offset,
+# which means the board comes back formatted. Export the config first.
+#
+# Name,     Type, SubType, Offset,   Size,      Flags
+nvs,        data, nvs,     0x9000,   0x5000,
+otadata,    data, ota,     0xE000,   0x2000,
+app0,       app,  ota_0,   0x10000,  0x1C0000,
+app1,       app,  ota_1,   0x1D0000, 0x1C0000,
+spiffs,     data, spiffs,  0x390000, 0x70000,

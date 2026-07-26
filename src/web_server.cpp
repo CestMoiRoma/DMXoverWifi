@@ -131,6 +131,32 @@ void DmxWebServer::registerUpdateRoutes() {
     _updater.statusToJson(doc.to<JsonObject>());
     sendJson(200, doc);
   });
+
+  // The board fetching a release for itself. GitHub serves release assets with
+  // no CORS header, so the page cannot read those bytes and post them; what it
+  // can read is the API, which publishes a sha256 for every asset. So the
+  // browser sends the URL and that digest, and the board refuses any download
+  // that does not match it. The digest is not optional: see updater.h.
+  //
+  // Answers at once and returns to the loop, because a megabyte over TLS takes
+  // far longer than a request should. The UI watches /api/ota/status.
+  onApi("/api/ota/fetch", HTTP_POST, [this]() {
+    JsonDocument body;
+    parseBody(body);
+    String url = (const char*)(body["url"] | "");
+    String sha = (const char*)(body["sha256"] | "");
+    if (!_updater.beginFetch(url, sha)) {
+      JsonDocument doc;
+      doc["ok"] = false;
+      doc["error"] = _updater.error();
+      sendJson(400, doc);
+      return;
+    }
+    JsonDocument doc;
+    _updater.statusToJson(doc.to<JsonObject>());
+    doc["started"] = true;
+    sendJson(200, doc);
+  });
 }
 
 // ---- access control ----

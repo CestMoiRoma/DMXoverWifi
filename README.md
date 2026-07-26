@@ -32,7 +32,7 @@ its own page: **[WIKI.md](WIKI.md)** is the index.
 | **Multi-network WiFi** | Several networks with priorities, DHCP or a fixed address per network, and a config hotspot when none answer |
 | **MQTT and Home Assistant** | Optional. Auto-discovery, so every channel and scene turns up as an entity |
 | **Serial console** | A full command set over USB, plus a binary protocol for channel values. Enough to run the box with the radio switched off |
-| **Over-the-air updates** | A `.bin` from a GitHub release, written to the spare application partition. Settings and fixtures are untouched |
+| **Over-the-air updates** | One press. The board downloads the release itself and refuses any image whose sha256 does not match what GitHub published. Settings and fixtures are untouched |
 | **Headless option** | A build flag drops the served UI and keeps the REST API, MQTT, WiFi and DMX |
 | **Parent and child mesh** | Present in the UI and the settings store. **Work in progress: stored only, no radio behaviour yet** |
 

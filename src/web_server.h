@@ -37,6 +37,11 @@ class DmxWebServer {
   void begin();
   void handleClient() { _server.handleClient(); }
 
+  // A firmware fetch outlives the request that started it, so the main loop has
+  // to drive it. Exposed rather than hidden inside handleClient() because it is
+  // not part of serving a request.
+  Updater& updater() { return _updater; }
+
  private:
   void registerRoutes();
 

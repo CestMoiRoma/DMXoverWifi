@@ -104,6 +104,10 @@ void loop() {
 
   if (!wifiManager.disabled()) {
     webServer.handleClient();
+    // A firmware download the board is making for itself, one bounded chunk per
+    // pass. It rewrites the spare application partition while everything else
+    // here carries on, DMX included.
+    webServer.updater().loopFetch();
     wsServer.loop();
     wifiManager.loop();
     ethernet.loop();
