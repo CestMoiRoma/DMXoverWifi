@@ -491,7 +491,10 @@ void SerialConsole::cmdGetStatus(const String& rest) {
     JsonDocument m;
     _mqtt.statusToJson(m.to<JsonObject>());
     emit("mqtt: enabled=" + pyBool(m["enabled"] | false) + " connected=" +
-         pyBool(m["connected"] | false) + " broker=" + String((const char*)(m["broker"] | "")));
+         pyBool(m["connected"] | false) + " broker=" + String((const char*)(m["broker"] | "")) +
+         ":" + String((int)(m["port"] | 1883)) + " entities=" + String((int)(m["entities"] | 0)) +
+         " attempts=" + String((int)(m["attempts"] | 0)));
+    if (!m["reason"].isNull()) emit("  why: " + String((const char*)m["reason"]));
     JsonDocument sys;
     settings_store::load("system.json", sys);
     String dirPin = (sys["dmx_dir_pin_enabled"] | false)
@@ -515,7 +518,10 @@ void SerialConsole::cmdGetStatus(const String& rest) {
     JsonDocument m;
     _mqtt.statusToJson(m.to<JsonObject>());
     emit("mqtt: enabled=" + pyBool(m["enabled"] | false) + " connected=" +
-         pyBool(m["connected"] | false) + " broker=" + String((const char*)(m["broker"] | "")));
+         pyBool(m["connected"] | false) + " broker=" + String((const char*)(m["broker"] | "")) +
+         ":" + String((int)(m["port"] | 1883)) + " entities=" + String((int)(m["entities"] | 0)) +
+         " attempts=" + String((int)(m["attempts"] | 0)));
+    if (!m["reason"].isNull()) emit("  why: " + String((const char*)m["reason"]));
 
   } else if (sub == "devices") {
     if (_devices.devices().empty()) {

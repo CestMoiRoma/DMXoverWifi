@@ -315,6 +315,7 @@ function switchView(name) {
   // The + creates whatever the current page holds.
   document.getElementById("add-device-fab").hidden = name === "settings";
   currentView = name;
+  if (name !== "settings") stopMqttPolling();
   if (name === "devices") renderDevices();
   if (name === "scenes") renderScenes();
   if (name === "groups") renderGroups();
@@ -341,6 +342,9 @@ function switchPanel(name) {
   document.querySelector('.subnav-btn[data-panel="' + name + '"]').classList.add("active");
   if (name === "labels") renderLabelList();
   if (name === "info") renderInfo();
+  // The broker status is only worth asking for while it is on screen.
+  if (name === "api") startMqttPolling();
+  else stopMqttPolling();
 }
 
 document.querySelectorAll(".subnav-btn").forEach((btn) => {
@@ -2488,6 +2492,7 @@ async function renderSettings() {
   mqttForm.password.value = mqtt.password || "";
   mqttForm.base_topic.value = mqtt.base_topic || "";
   mqttForm.discovery_prefix.value = mqtt.discovery_prefix || "";
+  renderMqttStatus(mqtt.status);
 
   const system = await api("/api/system");
   const pinsForm = document.getElementById("system-pins-form");
@@ -2871,6 +2876,93 @@ document.getElementById("modules-form").addEventListener("submit", async (e) => 
     mqtt_enabled: form.mqtt_enabled.checked,
   });
   document.getElementById("section-mqtt-broker").hidden = !form.mqtt_enabled.checked;
+  pollMqttStatus();
+});
+
+// -- mqtt --
+//
+// The page reports what the bridge is doing, not what it was told to do. Saving
+// a broker address and reaching a broker are different events, and until now the
+// difference was invisible from here.
+
+let mqttPollTimer = null;
+
+function renderMqttStatus(status) {
+  const box = document.getElementById("mqtt-status");
+  const detail = document.getElementById("mqtt-detail");
+  if (!box) return;
+  if (!status) {
+    box.className = "conn-status";
+    box.querySelector(".conn-text").textContent = "Unknown";
+    detail.textContent = "";
+    return;
+  }
+
+  const live = !!status.connected;
+  const trying = !live && status.enabled && status.broker;
+  box.className = "conn-status " + (live ? "ok" : trying ? "bad" : "idle");
+  box.querySelector(".conn-text").textContent = live
+    ? "Connected to " + status.broker + ":" + status.port
+    : status.reason || status.state_text || "Not connected";
+
+  const bits = [];
+  if (live) {
+    bits.push(status.entities + (status.entities === 1 ? " entity" : " entities") + " published");
+    bits.push("up " + Math.max(0, status.connected_for_s || 0) + " s");
+    bits.push("base topic " + status.base_topic);
+    bits.push("client id " + status.client_id);
+  } else if (trying) {
+    bits.push(status.attempts + (status.attempts === 1 ? " attempt" : " attempts"));
+    if (typeof status.next_retry_s === "number") bits.push("next try in " + status.next_retry_s + " s");
+    if (status.ever_connected) bits.push("it was connected earlier this boot");
+  }
+  detail.textContent = bits.join(" · ");
+}
+
+async function pollMqttStatus() {
+  try {
+    renderMqttStatus(await api("/api/mqtt/status"));
+  } catch (e) {
+    // A board mid-reboot is not news. The next tick will have something to say.
+  }
+}
+
+function startMqttPolling() {
+  stopMqttPolling();
+  pollMqttStatus();
+  mqttPollTimer = setInterval(pollMqttStatus, 3000);
+}
+
+function stopMqttPolling() {
+  if (mqttPollTimer) clearInterval(mqttPollTimer);
+  mqttPollTimer = null;
+}
+
+document.getElementById("mqtt-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const res = await api("/api/mqtt", "POST", {
+    host: form.host.value.trim(),
+    // A number, not the string the form holds. The board reads this as an int,
+    // and a quoted port would fall back to 1883 without saying so.
+    port: parseInt(form.port.value, 10) || 1883,
+    username: form.username.value,
+    password: form.password.value,
+    base_topic: form.base_topic.value.trim(),
+    discovery_prefix: form.discovery_prefix.value.trim(),
+  });
+  // By the time this answers, the board has already tried the broker.
+  renderMqttStatus(res.status);
+});
+
+document.getElementById("mqtt-connect").addEventListener("click", async (e) => {
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  try {
+    renderMqttStatus(await api("/api/mqtt/connect", "POST"));
+  } finally {
+    btn.disabled = false;
+  }
 });
 
 document.getElementById("api-key-copy").addEventListener("click", async () => {

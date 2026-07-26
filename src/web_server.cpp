@@ -449,6 +449,7 @@ void DmxWebServer::registerRoutes() {
   onApi("/api/mqtt", HTTP_GET, [this]() {
     JsonDocument doc;
     _mqtt.copyConfigTo(doc.to<JsonObject>());
+    _mqtt.statusToJson(doc["status"].to<JsonObject>());
     sendJson(200, doc);
   });
   onApi("/api/mqtt", HTTP_POST, [this]() {
@@ -456,8 +457,25 @@ void DmxWebServer::registerRoutes() {
     parseBody(body);
     _mqtt.setConfig(body.as<JsonObjectConst>());
     if (_modules.mqttEnabled()) _mqtt.start();
+    // The saved settings and what they achieved, in one answer: the caller
+    // asked to connect to a broker, not to store a string.
     JsonDocument doc;
     _mqtt.copyConfigTo(doc.to<JsonObject>());
+    _mqtt.statusToJson(doc["status"].to<JsonObject>());
+    sendJson(200, doc);
+  });
+  // Polled by the settings page. No passwords in here, so it can be read often.
+  onApi("/api/mqtt/status", HTTP_GET, [this]() {
+    JsonDocument doc;
+    _mqtt.statusToJson(doc.to<JsonObject>());
+    sendJson(200, doc);
+  });
+  // An attempt asked for by a person: it jumps the backoff and answers with the
+  // outcome, which is the difference between a status page and a guess.
+  onApi("/api/mqtt/connect", HTTP_POST, [this]() {
+    _mqtt.connectNow();
+    JsonDocument doc;
+    _mqtt.statusToJson(doc.to<JsonObject>());
     sendJson(200, doc);
   });
 

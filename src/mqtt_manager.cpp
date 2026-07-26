@@ -12,6 +12,26 @@ void MqttManager::reloadConfig() { settings_store::load("mqtt.json", _cfg); }
 
 void MqttManager::setConfig(JsonObjectConst cfg) {
   for (JsonPairConst kv : cfg) {
+    // A browser form posts everything as text, and a port stored as "1883" is
+    // not an integer as far as ArduinoJson is concerned: `_cfg["port"] | 1883`
+    // would hand back the default and the board would dial a door nobody asked
+    // for. Coerced here rather than trusted at every read.
+    if (strcmp(kv.key().c_str(), "port") == 0) {
+      int port = 0;
+      if (kv.value().is<int>()) port = kv.value().as<int>();
+      else if (kv.value().is<const char*>()) port = String(kv.value().as<const char*>()).toInt();
+      if (port <= 0 || port > 65535) port = 1883;
+      _cfg["port"] = port;
+      continue;
+    }
+    // A hostname with a stray space resolves to nothing and reports it as an
+    // unreachable broker, which sends you looking at the broker.
+    if (strcmp(kv.key().c_str(), "host") == 0 && kv.value().is<const char*>()) {
+      String host = kv.value().as<const char*>();
+      host.trim();
+      _cfg["host"] = host;
+      continue;
+    }
     _cfg[kv.key()] = kv.value();
   }
   settings_store::save("mqtt.json", _cfg);
@@ -35,70 +55,247 @@ String MqttManager::uid(const String& deviceId, int offset) {
   return deviceId + "_" + String(offset);
 }
 
-void MqttManager::start() {
-  stop();
-  if (!(_cfg["enabled"] | false)) return;
-  String host = (const char*)(_cfg["host"] | "");
-  if (!host.length()) return;
+String MqttManager::clientId() const {
+#if defined(ESP8266)
+  return "dmxwifi-" + String(ESP.getChipId(), HEX);
+#else
+  return "dmxwifi-" + String((uint32_t)ESP.getEfuseMac(), HEX);
+#endif
+}
 
-  int port = _cfg["port"] | 1883;
-  _client.setServer(host.c_str(), port);
+bool MqttManager::configured() const {
+  if (!(_cfg["enabled"] | false)) return false;
+  return String((const char*)(_cfg["host"] | "")).length() > 0;
+}
+
+// The bridge speaks over WiFiClient, so a board on the wired link alone cannot
+// reach a broker. Reported rather than retried in silence.
+bool MqttManager::networkUp() const { return WiFi.status() == WL_CONNECTED; }
+
+void MqttManager::applyServer() {
+  String host = (const char*)(_cfg["host"] | "");
+  if (host != _host) _ipValid = false;  // a new name deserves a new lookup
+  _host = host;
+  _client.setServer(_host.c_str(), (uint16_t)(_cfg["port"] | 1883));
   _client.setBufferSize(1024);  // HA discovery payloads exceed the 256 default
+  _client.setKeepAlive(20);
+  // Only the wait for the broker's CONNACK now: the TCP connection is made in
+  // openSocket() below, on a much shorter leash than PubSubClient would use.
+  _client.setSocketTimeout(2);
   _client.setCallback(&MqttManager::trampoline);
   s_instance = this;
-  connect();
+}
+
+void MqttManager::start() {
+  stop();
+  _retryMs = kRetryMinMs;
+  if (!configured()) return;
+  applyServer();
+  if (networkUp()) connect();
+}
+
+void MqttManager::connectNow() {
+  if (_client.connected()) _client.disconnect();
+  _retryMs = kRetryMinMs;
+  if (!configured()) return;
+  applyServer();
+  if (networkUp()) connect();
+}
+
+void MqttManager::backoff() {
+  _retryMs = _retryMs * 2;
+  if (_retryMs > (uint32_t)kRetryMaxMs) _retryMs = kRetryMaxMs;
+}
+
+// A name is looked up once and remembered. Repeating a DNS query on every retry
+// is how a wrong hostname turns into a stall every few seconds.
+bool MqttManager::resolveHost(IPAddress& out) {
+  if (_ipValid) {
+    out = _ip;
+    return true;
+  }
+  if (out.fromString(_host)) {  // already an address, nothing to ask anyone
+    _ip = out;
+    _ipValid = true;
+    return true;
+  }
+
+  IPAddress found;
+  bool ok;
+  if (_host.endsWith(".local")) {
+    // A .local name is mDNS, not DNS. Asking a DNS server for it fails, and
+    // "homeassistant.local" is what most people will type.
+    String bare = _host.substring(0, _host.length() - 6);
+#if defined(ESP8266)
+    found = MDNS.queryHost(bare, 1000);
+    ok = found != INADDR_NONE && (uint32_t)found != 0;
+#else
+    found = MDNS.queryHost(bare, 1000);
+    ok = (uint32_t)found != 0;
+#endif
+  } else {
+    ok = WiFi.hostByName(_host.c_str(), found) == 1;
+  }
+  if (!ok) return false;
+
+  _ip = found;
+  _ipValid = true;
+  out = found;
+  return true;
+}
+
+// The TCP half of connecting, done here rather than inside PubSubClient so it
+// can be given a deadline. PubSubClient reuses a socket that is already open,
+// so this costs nothing but control.
+bool MqttManager::openSocket() {
+  if (_net.connected()) return true;
+
+  IPAddress ip;
+  if (!resolveHost(ip)) {
+    _lastState = -2;
+    _lastError = _host.endsWith(".local") ? "that .local name did not answer on mDNS"
+                                          : "that broker name did not resolve";
+    return false;
+  }
+
+  uint16_t port = (uint16_t)(_cfg["port"] | 1883);
+#if defined(ESP8266)
+  _net.setTimeout(kTcpTimeoutMs);
+  bool up = _net.connect(ip, port);
+#else
+  bool up = _net.connect(ip, port, kTcpTimeoutMs) == 1;
+#endif
+  if (!up) {
+    _net.stop();
+    _lastState = -2;
+    _lastError = "nothing answered on that host and port";
+    return false;
+  }
+  return true;
 }
 
 bool MqttManager::connect() {
-#if defined(ESP8266)
-  String clientId = "dmxwifi-" + String(ESP.getChipId(), HEX);
-#else
-  String clientId = "dmxwifi-" + String((uint32_t)ESP.getEfuseMac(), HEX);
-#endif
+  _attempts++;
+  _lastAttempt = millis();
+
+  if (!openSocket()) {
+    backoff();
+    return false;
+  }
+
   String user = (const char*)(_cfg["username"] | "");
   String pass = (const char*)(_cfg["password"] | "");
+  // A last will, so Home Assistant marks the entities unavailable when the
+  // board drops off instead of showing the last value it happened to hear.
+  String availability = baseTopic() + "/status";
+  String id = clientId();
 
-  bool ok;
-  if (user.length()) {
-    ok = _client.connect(clientId.c_str(), user.c_str(), pass.c_str());
-  } else {
-    ok = _client.connect(clientId.c_str());
+  bool ok = _client.connect(id.c_str(), user.length() ? user.c_str() : nullptr,
+                            user.length() ? pass.c_str() : nullptr, availability.c_str(), 0, true,
+                            "offline");
+  if (ok) {
+    _client.publish(availability.c_str(), "online", true);
+    _everConnected = true;
+    _wasConnected = true;
+    _connectedSince = millis();
+    _retryMs = kRetryMinMs;
+    _lastState = 0;
+    _lastError = "";
+    publishDiscovery();
+    return true;
   }
-  if (ok) publishDiscovery();
-  return ok;
+
+  _lastState = _client.state();
+  _lastError = stateText(_lastState);
+  _net.stop();
+  backoff();
+  return false;
 }
 
 void MqttManager::stop() {
   if (_client.connected()) _client.disconnect();
+  _wasConnected = false;
 }
 
 void MqttManager::loop() {
-  if (!(_cfg["enabled"] | false)) return;
-  if (!String((const char*)(_cfg["host"] | "")).length()) return;
+  if (!configured()) return;
 
   if (_client.connected()) {
     _client.loop();
     return;
   }
-  // Dropped connection: retry on a slow cadence so a down broker doesn't stall
-  // the DMX loop.
-  uint32_t now = millis();
-  if (now - _lastReconnect >= 5000) {
-    _lastReconnect = now;
+  // Note the drop once, while the client still knows why, rather than reporting
+  // the generic disconnected state forever after.
+  if (_wasConnected) {
+    _wasConnected = false;
+    _lastState = _client.state();
+    _lastError = stateText(_lastState);
+  }
+  if (!networkUp()) return;
+
+  if (millis() - _lastAttempt >= _retryMs) {
+    applyServer();
     connect();
   }
 }
 
+String MqttManager::stateText(int state) {
+  switch (state) {
+    case -4: return "the broker stopped answering, keepalive timed out";
+    case -3: return "the network connection was lost";
+    case -2: return "nothing answered on that host and port";
+    case -1: return "disconnected";
+    case 0: return "connected";
+    case 1: return "the broker refused the protocol version";
+    case 2: return "the broker rejected the client id";
+    case 3: return "the broker is unavailable";
+    case 4: return "the broker refused the username or password";
+    case 5: return "the broker refused this client, not authorised";
+    default: return "unknown state " + String(state);
+  }
+}
+
 void MqttManager::statusToJson(JsonObject out) const {
-  out["enabled"] = (bool)(_cfg["enabled"] | false);
-  out["broker"] = (const char*)(_cfg["host"] | "");
-  out["connected"] = const_cast<PubSubClient&>(_client).connected();
+  PubSubClient& client = const_cast<PubSubClient&>(_client);
+  bool enabled = _cfg["enabled"] | false;
+  String host = (const char*)(_cfg["host"] | "");
+  bool connected = client.connected();
+
+  out["enabled"] = enabled;
+  out["broker"] = host;
+  out["port"] = (int)(_cfg["port"] | 1883);
+  out["base_topic"] = baseTopic();
+  out["discovery_prefix"] = discoveryPrefix();
+  out["client_id"] = clientId();
+  out["connected"] = connected;
+  out["state"] = client.state();
+  out["state_text"] = stateText(client.state());
+  out["attempts"] = _attempts;
+  out["ever_connected"] = _everConnected;
+  out["entities"] = _entities;
+  if (connected) out["connected_for_s"] = (millis() - _connectedSince) / 1000;
+  if (_lastError.length()) out["last_error"] = _lastError;
+
+  // One sentence naming what is in the way, in the order a person would check.
+  if (!enabled) {
+    out["reason"] = "the MQTT bridge is switched off under Modules";
+  } else if (!host.length()) {
+    out["reason"] = "no broker host is set";
+  } else if (!networkUp()) {
+    out["reason"] = "the board is not on a WiFi network, and the bridge speaks over WiFi";
+  } else if (!connected) {
+    out["reason"] = _lastError.length() ? _lastError : "no connection attempt has finished yet";
+    uint32_t waited = millis() - _lastAttempt;
+    out["next_retry_s"] = waited >= _retryMs ? 0 : (_retryMs - waited + 999) / 1000;
+  }
 }
 
 void MqttManager::publishDiscovery() {
   if (!_client.connected()) return;
   String prefix = discoveryPrefix();
   String base = baseTopic();
+  String availability = base + "/status";
+  _entities = 0;
 
   for (Device& device : _dm.devices()) {
     for (Channel& channel : device.channels) {
@@ -110,6 +307,7 @@ void MqttManager::publishDiscovery() {
       payload["name"] = channel.name;
       payload["unique_id"] = u;
       payload["command_topic"] = commandTopic;
+      payload["availability_topic"] = availability;
 
       String configTopic;
       if (channel.type == "slider") {
@@ -138,7 +336,7 @@ void MqttManager::publishDiscovery() {
 
       String out;
       serializeJson(payload, out);
-      _client.publish(configTopic.c_str(), out.c_str(), true);
+      if (_client.publish(configTopic.c_str(), out.c_str(), true)) _entities++;
       _client.subscribe(commandTopic.c_str());
     }
   }

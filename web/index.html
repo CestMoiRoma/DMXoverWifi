@@ -398,6 +398,11 @@
 
       <div class="section" id="section-mqtt-broker">
         <h2 data-i18n="sec.broker">MQTT broker</h2>
+        <div id="mqtt-status" class="conn-status">
+          <span class="dot"></span>
+          <span class="conn-text">Checking…</span>
+        </div>
+        <p id="mqtt-detail" class="hint"></p>
         <form id="mqtt-form" class="form-stacked">
           <div class="field">
             <label for="mqtt-host" data-i18n="form.brokerhost">Broker host</label>
@@ -425,6 +430,8 @@
           </div>
           <div class="form-actions">
             <button type="submit" data-i18n="btn.save">Save</button>
+            <button type="button" id="mqtt-connect" class="secondary"
+                    data-i18n="btn.connectnow">Connect now</button>
           </div>
         </form>
       </div>

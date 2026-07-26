@@ -491,6 +491,28 @@ form { margin: 0; }
   .sidebar.open { display: flex; }
 }
 
+/* -- connection status line -- */
+
+.conn-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+  font-size: 0.95rem;
+}
+.conn-status .dot {
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 50%;
+  background: var(--muted);
+  flex-shrink: 0;
+}
+/* Green connected, red trying and failing, grey switched off. The third state
+   matters: a bridge nobody turned on is not a fault. */
+.conn-status.ok .dot { background: #16a34a; }
+.conn-status.bad .dot { background: #dc2626; }
+.conn-status.idle .dot { background: var(--muted); }
+
 /* -- beta marker -- */
 
 .beta-tag {
