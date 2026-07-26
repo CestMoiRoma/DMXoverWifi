@@ -95,15 +95,17 @@ function setLanguage(code) {
 }
 
 function initLanguage() {
+  // No guessing from the browser: the language is whatever was picked in
+  // Settings, and English until someone picks. A page that quietly changes
+  // language depending on which laptop opened it is harder to talk about than
+  // one that is always in the language you chose.
   let stored = null;
   try {
     stored = localStorage.getItem("dmx-lang");
   } catch (e) {
     stored = null;
   }
-  // No stored choice: follow the browser, since it already knows.
-  const guess = (navigator.language || "en").slice(0, 2).toLowerCase();
-  lang = LANGUAGES[stored] ? stored : LANGUAGES[guess] ? guess : "en";
+  lang = LANGUAGES[stored] ? stored : "en";
 
   const select = document.getElementById("lang-select");
   if (select) {
