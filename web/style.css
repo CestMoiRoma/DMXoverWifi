@@ -452,12 +452,12 @@ form { margin: 0; }
 
 /* Cards flow into as many columns as the window allows rather than one very
    wide card per row, which is unreadable on a monitor and wasteful on a laptop.
-   The minimum is set by the widest card body: a 168px wheel, the gap, and the
-   fader column beside it. Below that an EZ card folds its faders under the
-   wheel, which is exactly what this width exists to prevent. */
+   The minimum is set by the widest card body: a 168px widget, the gap, and the
+   faders standing beside it. min() rather than a bare 26rem so a phone narrower
+   than one card still gets a column that fits the screen. */
 .device-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(25rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 26rem), 1fr));
   gap: 0.75rem;
   align-items: start;
 }
@@ -685,23 +685,27 @@ button.danger:hover { background: #b91c1c; border-color: #b91c1c; }
 
 /* -- the two EZ card shapes -- */
 
-/* Widget on the left, faders standing on the right, presets underneath. Wraps
-   on a narrow card rather than squeezing the wheel. */
+/* Widget on the left, faders standing on the right, presets underneath. One
+   line, always: nothing here wraps, so the card looks the same on every screen
+   and cannot quietly restack itself when a label or a fader grows by a few
+   pixels. A card too narrow to hold the row scrolls it sideways instead, which
+   is visible and undoes itself when the window widens. */
 .ez-layout {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: flex-start;
   justify-content: center;
+  justify-content: safe center;  /* centred, but never clipped on the left */
   gap: 1.25rem;
   margin: 0.6rem 0;
+  overflow-x: auto;
+  /* The width the row needs: a 168px widget, the gap, and two 5rem faders. The
+     grid keeps cards above this, so the scrollbar is for the phone case. */
+  min-width: min(100%, 22.5rem);
 }
 .ez-layout .ez-main { flex: 0 0 auto; }
 .ez-layout .ez-block { margin: 0; }
-/* A narrow basis on purpose. Flex decides where to break lines from this figure,
-   not from how wide the faders would like to be, so three faders beside a
-   joystick wrap among themselves into two columns instead of dropping the whole
-   block under the widget. It still grows to whatever room is left. */
-.ez-layout .fader-row { flex: 1 1 9rem; min-width: 0; margin-top: 0; gap: 0.75rem; }
+.ez-layout .fader-row { flex: 0 0 auto; flex-wrap: nowrap; margin-top: 0; gap: 0.75rem; }
 
 /* What actually decides whether two faders sit side by side is the label, not
    the slider: a column flex item is as wide as its widest child, so "Master
