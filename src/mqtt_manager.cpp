@@ -4,7 +4,8 @@
 
 MqttManager* MqttManager::s_instance = nullptr;
 
-MqttManager::MqttManager(DeviceManager& dm) : _dm(dm), _client(_net) {}
+MqttManager::MqttManager(DeviceManager& dm, SceneStore& scenes)
+    : _dm(dm), _scenes(scenes), _client(_net) {}
 
 void MqttManager::begin() { reloadConfig(); }
 
@@ -340,6 +341,57 @@ void MqttManager::publishDiscovery() {
       _client.subscribe(commandTopic.c_str());
     }
   }
+
+  // Scenes, as Home Assistant scene entities. Stateless by nature: a scene is
+  // something you fire, not something that is on, so there is no state topic
+  // and nothing to keep in step.
+  for (const Scene& scene : _scenes.scenes()) {
+    String commandTopic = base + "/scene/" + scene.id + "/set";
+
+    JsonDocument payload;
+    payload["name"] = scene.name;
+    payload["unique_id"] = scene.id;
+    payload["command_topic"] = commandTopic;
+    payload["payload_on"] = "ON";
+    payload["availability_topic"] = availability;
+    if (scene.description.length()) payload["icon"] = "mdi:palette";
+
+    // All the scenes hang off one device, the board itself, rather than
+    // scattering loose entities through the integration.
+    JsonObject deviceBlock = payload["device"].to<JsonObject>();
+    deviceBlock["identifiers"].to<JsonArray>().add(clientId());
+    deviceBlock["name"] = "DMX over WiFi";
+    deviceBlock["manufacturer"] = "DIY";
+    deviceBlock["model"] = "DMX-over-WiFi";
+
+    String out;
+    serializeJson(payload, out);
+    if (_client.publish((prefix + "/scene/" + scene.id + "/config").c_str(), out.c_str(), true)) {
+      _entities++;
+    }
+    _client.subscribe(commandTopic.c_str());
+  }
+}
+
+// An empty retained payload on a config topic is how MQTT discovery says "this
+// entity is gone". Without it Home Assistant keeps showing a fixture that no
+// longer exists on a board that never mentions it again.
+void MqttManager::dropDevice(const Device& device) {
+  if (!_client.connected()) return;
+  String prefix = discoveryPrefix();
+  for (const Channel& channel : device.channels) {
+    String u = uid(device.id, channel.offset);
+    _client.publish((prefix + "/number/" + u + "/config").c_str(), "", true);
+    _client.publish((prefix + "/switch/" + u + "/config").c_str(), "", true);
+    _client.publish((prefix + "/button/" + u + "/config").c_str(), "", true);
+    _client.unsubscribe((baseTopic() + "/" + u + "/set").c_str());
+  }
+}
+
+void MqttManager::dropScene(const String& sceneId) {
+  if (!_client.connected()) return;
+  _client.publish((discoveryPrefix() + "/scene/" + sceneId + "/config").c_str(), "", true);
+  _client.unsubscribe((baseTopic() + "/scene/" + sceneId + "/set").c_str());
 }
 
 void MqttManager::onMessage(char* topic, uint8_t* payload, unsigned int len) {
@@ -348,6 +400,16 @@ void MqttManager::onMessage(char* topic, uint8_t* payload, unsigned int len) {
   if (!t.startsWith(prefix) || !t.endsWith("/set")) return;
 
   String u = t.substring(prefix.length(), t.length() - 4);  // drop prefix and "/set"
+
+  // A scene is fired, not set. Any payload does it: Home Assistant sends "ON",
+  // and an automation written by hand should not have to guess the word.
+  if (u.startsWith("scene/")) {
+    JsonDocument doc;
+    JsonArray missing = doc.to<JsonArray>();
+    _scenes.play(u.substring(6), _dm, missing);
+    return;
+  }
+
   int us = u.lastIndexOf('_');
   if (us < 0) return;
   String deviceId = u.substring(0, us);

@@ -178,10 +178,30 @@ cannot find one asks: cancel, or continue without that device.
 
 ## Batch 5.5, MQTT
 
-Moved out of batch 4: there is more to do here than one item.
+~~Done.~~ Scenes are published as Home Assistant scene entities and fire on any
+payload sent to `<base>/scene/<id>/set`. Groups were not asked for and are not
+published.
 
-- Scenes must be triggerable from MQTT, so they go to Home Assistant like the
-  devices do. Groups do not need to.
+What the bridge learned along the way, all of it found by finally pointing it at
+a broker:
+
+- The Save button on the MQTT form had no handler, so the browser submitted the
+  form natively, reloaded the page and posted nothing. Nothing was ever stored,
+  which is why Home Assistant heard nothing and the fields were empty on return.
+- PubSubClient keeps the host pointer it is given rather than copying it, and it
+  was given a local. It read freed memory on every connect.
+- A port arriving as `"1883"` from a form is not an integer to ArduinoJson, so
+  `| 1883` silently returned the default.
+- Its connect blocked the loop for over four seconds against a host that was not
+  there, and the board stopped answering HTTP. The TCP connection is now made in
+  `openSocket()` with a 250 ms deadline and handed over already open, which
+  PubSubClient accepts. Failure costs a 2 ms pass now instead of a 4536 ms one.
+- Retained discovery outlives the board, so deleting a fixture or a scene has to
+  withdraw it explicitly or the entity stays in Home Assistant forever.
+
+Still worth doing here: the emergency stop as a button entity, and per-channel
+state is published on change but not republished on reconnect, so Home Assistant
+can hold a stale value until the next move.
 
 ## Batch 5
 

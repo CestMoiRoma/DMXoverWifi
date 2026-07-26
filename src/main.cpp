@@ -27,7 +27,7 @@ static SceneStore sceneStore;
 static GroupStore groupStore;
 static WifiManager wifiManager;
 static EthernetManager ethernet;
-static MqttManager mqttManager(deviceManager);
+static MqttManager mqttManager(deviceManager, sceneStore);
 static WsServer wsServer(deviceManager, modules);
 static DmxWebServer webServer(deviceManager, labelStore, modules, wifiManager, ethernet,
                               mqttManager, saveGuard, sceneStore, groupStore);

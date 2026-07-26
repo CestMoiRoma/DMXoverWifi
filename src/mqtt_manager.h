@@ -12,6 +12,7 @@
 #endif
 
 #include "devices.h"
+#include "scenes.h"
 
 // Optional MQTT bridge with Home Assistant auto-discovery. Publishes a number /
 // switch / button entity per channel and applies inbound commands to the DMX
@@ -23,7 +24,7 @@
 // reports it. Guessing from silence is what this class exists to avoid.
 class MqttManager {
  public:
-  explicit MqttManager(DeviceManager& dm);
+  MqttManager(DeviceManager& dm, SceneStore& scenes);
 
   void begin();  // load config
   void reloadConfig();
@@ -41,6 +42,12 @@ class MqttManager {
   void statusToJson(JsonObject out) const;
   void publishDiscovery();
   void publishState(const String& deviceId, int offset, int value);
+
+  // Retained discovery outlives whatever published it, so a fixture or a scene
+  // that is deleted here has to be withdrawn there too. Called before the thing
+  // itself goes, while its channels can still be named.
+  void dropDevice(const Device& device);
+  void dropScene(const String& sceneId);
 
   // Called from the PubSubClient trampoline.
   void onMessage(char* topic, uint8_t* payload, unsigned int len);
@@ -75,6 +82,7 @@ class MqttManager {
   enum : uint32_t { kTcpTimeoutMs = 250 };
 
   DeviceManager& _dm;
+  SceneStore& _scenes;
   JsonDocument _cfg;
   WiFiClient _net;
   PubSubClient _client;

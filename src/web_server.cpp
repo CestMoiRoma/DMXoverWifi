@@ -183,6 +183,8 @@ void DmxWebServer::registerRoutes() {
     sendJson(200, out);
   });
   onApi(UriBraces("/api/devices/{}"), HTTP_DELETE, [this]() {
+    Device* going = _devices.find(_server.pathArg(0));
+    if (going) _mqtt.dropDevice(*going);
     bool ok = _devices.removeDevice(_server.pathArg(0));
     if (ok) {
       // Its channels have just ceased to exist, so drop the scene steps and
@@ -242,6 +244,9 @@ void DmxWebServer::registerRoutes() {
     sendJson(200, out);
   });
   onApi(UriBraces("/api/scenes/{}"), HTTP_DELETE, [this]() {
+    // Withdraw the discovery first: once it is gone from here there is nothing
+    // left to name it, and Home Assistant would keep the entity forever.
+    _mqtt.dropScene(_server.pathArg(0));
     bool ok = _scenes.remove(_server.pathArg(0));
     _mqtt.publishDiscovery();
     JsonDocument out;
