@@ -1,6 +1,8 @@
 #include "web_server.h"
 
 #include <LittleFS.h>
+
+#include "web_assets.h"
 #include <uri/UriBraces.h>
 
 #include "config.h"
@@ -56,11 +58,79 @@ bool DmxWebServer::serveFile(const char* path, const char* contentType) {
 // it. Every browser has handled gzip for twenty years, so there is no
 // uncompressed copy to fall back to.
 //
-// Do not add Content-Encoding here. streamFile adds it by itself for any file
-// whose name ends in .gz, and sending it twice makes a browser try to inflate
-// the body twice and fail the whole page with ERR_CONTENT_DECODING_FAILED.
+// It lives in the firmware rather than on LittleFS, so an over-the-air update
+// carries the page and the code that serves it in one piece and never has to
+// write over the partition holding the settings.
+void DmxWebServer::sendPacked(const uint8_t* data, size_t len, const char* contentType) {
+#if WITH_WEBUI
+  // No validators are sent, and the whole asset is replaced by every update, so
+  // a cached copy can only ever be a stale UI talking to a newer API.
+  _server.sendHeader("Cache-Control", "no-store");
+  _server.sendHeader("Content-Encoding", "gzip");
+  _server.send_P(200, contentType, (const char*)data, len);
+#else
+  (void)data;
+  (void)len;
+  (void)contentType;
+#endif
+}
+
 void DmxWebServer::serveIndex() {
-  serveFile("/www/index.html.gz", "text/html");
+#if WITH_WEBUI
+  sendPacked(WEB_INDEX_GZ, WEB_INDEX_GZ_LEN, "text/html");
+#endif
+}
+
+// ---- firmware updates ----
+//
+// The upload runs in two halves. The multipart handler is called repeatedly
+// while the body arrives and writes straight into the spare application
+// partition; the request handler runs once at the end and is the only place a
+// response may be written. Nothing may be sent from the first half, which is
+// why the access check here is the silent one.
+void DmxWebServer::registerUpdateRoutes() {
+  _server.on(
+      "/api/ota", HTTP_POST,
+      [this]() {
+        if (_otaRefused) {
+          sendError(403, "not allowed");
+          return;
+        }
+        JsonDocument doc;
+        _updater.statusToJson(doc.to<JsonObject>());
+        bool ok = doc["ok"] | false;
+        if (!ok) {
+          sendJson(400, doc);
+          return;
+        }
+        doc["rebooting"] = true;
+        sendJson(200, doc);
+        Updater::rebootSoon();
+      },
+      [this]() {
+        HTTPUpload& upload = _server.upload();
+        switch (upload.status) {
+          case UPLOAD_FILE_START:
+            _otaRefused = apiRefusal() != 0;
+            if (!_otaRefused) _updater.beginUpload(upload.filename);
+            break;
+          case UPLOAD_FILE_WRITE:
+            if (!_otaRefused) _updater.writeChunk(upload.buf, upload.currentSize);
+            break;
+          case UPLOAD_FILE_END:
+            if (!_otaRefused) _updater.endUpload();
+            break;
+          default:
+            _updater.abortUpload();
+            break;
+        }
+      });
+
+  onApi("/api/ota/status", HTTP_GET, [this]() {
+    JsonDocument doc;
+    _updater.statusToJson(doc.to<JsonObject>());
+    sendJson(200, doc);
+  });
 }
 
 // ---- access control ----
@@ -85,19 +155,23 @@ bool DmxWebServer::requestFromUi() {
   return probe == host;
 }
 
-bool DmxWebServer::apiAllowed() {
-  if (requestFromUi()) return true;
-  if (!_modules.httpApiEnabled()) {
-    sendError(403, "http api is disabled");
-    return false;
-  }
+// The decision on its own, with no response written. A file upload needs to
+// know the answer while the body is still arriving, which is far too early to
+// be sending anything back.
+int DmxWebServer::apiRefusal() {
+  if (requestFromUi()) return 0;
+  if (!_modules.httpApiEnabled()) return 403;
   String key = _server.header("X-API-Key");
   if (!key.length()) key = _server.arg("api_key");
-  if (!_modules.keyMatches(key)) {
-    sendError(401, "missing or invalid api key");
-    return false;
-  }
-  return true;
+  if (!_modules.keyMatches(key)) return 401;
+  return 0;
+}
+
+bool DmxWebServer::apiAllowed() {
+  int status = apiRefusal();
+  if (!status) return true;
+  sendError(status, status == 401 ? "missing or invalid api key" : "http api is disabled");
+  return false;
 }
 
 void DmxWebServer::onApi(const Uri& uri, HTTPMethod method, std::function<void()> handler) {
@@ -131,7 +205,8 @@ void DmxWebServer::registerRoutes() {
   // so there is deliberately no separate asset left to request.
   _server.on("/", HTTP_GET, [this]() { serveIndex(); });
   _server.on("/index.html", HTTP_GET, [this]() { serveIndex(); });
-  _server.on("/wiki.md", HTTP_GET, [this]() { serveFile("/www/wiki.md", "text/plain"); });
+  _server.on("/wiki.md", HTTP_GET,
+             [this]() { sendPacked(WEB_WIKI_GZ, WEB_WIKI_GZ_LEN, "text/plain"); });
   // Browsers ask for this unprompted. Answering 204 costs one short response
   // instead of routing it through the 404 handler and its JSON body.
   _server.on("/favicon.ico", HTTP_GET, [this]() { _server.send(204, "image/x-icon", ""); });
@@ -600,6 +675,8 @@ void DmxWebServer::registerRoutes() {
   });
 
   // -- reboot --
+  registerUpdateRoutes();
+
   onApi("/api/reboot", HTTP_POST, [this]() {
     JsonDocument doc;
     doc["ok"] = true;

@@ -2510,6 +2510,9 @@ async function renderSettings() {
   updateDirPinField();
   document.getElementById("saveguard-form").save_guard.checked = system.save_guard !== false;
 
+  const ota = await api("/api/ota/status");
+  document.getElementById("fw-version").textContent = ota.running_version || "unknown";
+
   const modules = await api("/api/modules");
   const modForm = document.getElementById("modules-form");
   modForm.http_api_enabled.checked = !!modules.http_api_enabled;
@@ -3000,6 +3003,63 @@ document
 document.getElementById("saveguard-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   await api("/api/system", "POST", { save_guard: e.target.save_guard.checked });
+});
+
+// -- firmware --
+//
+// Uploaded with XMLHttpRequest rather than fetch, for the one thing fetch still
+// cannot do: report how far a request body has got. A megabyte over WiFi to a
+// board that answers one client at a time is long enough that a progress bar is
+// the difference between waiting and pulling the plug.
+
+document.getElementById("ota-install").addEventListener("click", () => {
+  const picker = document.getElementById("ota-file");
+  const status = document.getElementById("ota-status");
+  const bar = document.getElementById("ota-progress");
+  const file = picker.files && picker.files[0];
+  if (!file) {
+    status.textContent = "Pick a firmware .bin first.";
+    return;
+  }
+  if (!confirm("Install " + file.name + "? The board reboots when it finishes.")) return;
+
+  const body = new FormData();
+  body.append("firmware", file, file.name);
+  const request = new XMLHttpRequest();
+  request.open("POST", "/api/ota");
+  bar.hidden = false;
+  bar.value = 0;
+  status.textContent = "Sending " + Math.round(file.size / 1024) + " KB...";
+
+  request.upload.addEventListener("progress", (e) => {
+    if (!e.lengthComputable) return;
+    bar.value = Math.round((e.loaded / e.total) * 100);
+    status.textContent = "Sending, " + bar.value + "%. Do not close this page.";
+  });
+  request.addEventListener("load", () => {
+    let answer = {};
+    try {
+      answer = JSON.parse(request.responseText || "{}");
+    } catch (e) {
+      answer = {};
+    }
+    if (request.status === 200) {
+      bar.value = 100;
+      status.textContent = "Written and verified. The board is rebooting, this page reloads in 15 s.";
+      setTimeout(() => location.reload(), 15000);
+    } else {
+      bar.hidden = true;
+      status.textContent = "Refused: " + (answer.error || "the board rejected the image") + ".";
+    }
+  });
+  // The board reboots the instant it has answered, so a connection dropped
+  // after a complete upload is success, not failure. Only a drop mid-transfer
+  // is a real error, and the progress figure is what tells them apart.
+  request.addEventListener("error", () => {
+    bar.hidden = true;
+    status.textContent = "The connection dropped before the upload finished. Nothing was installed.";
+  });
+  request.send(body);
 });
 
 document.getElementById("reboot-btn").addEventListener("click", async () => {

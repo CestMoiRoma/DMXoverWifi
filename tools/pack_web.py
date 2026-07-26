@@ -1,28 +1,30 @@
-"""Pack the web UI into a single HTML file for the LittleFS image.
+"""Pack the web UI into the firmware binary.
 
-PlatformIO runs this as a `pre:` extra script, so it fires before `buildfs`
-packs $PROJECT_DATA_DIR. It reads the editable sources in web/ and writes one
-self-contained page to fsdata/www/index.html, with the stylesheet and the script
-spliced in where their tags sit.
+PlatformIO runs this as a `pre:` extra script. It reads the editable sources in
+web/, splices the stylesheet and the script into the page where their tags sit,
+gzips the result and writes it out as C arrays in src/web_assets.{h,cpp}.
 
-Why bother: the board answers one HTTP client at a time, and a browser loading
+Why one file: the board answers one HTTP client at a time, and a browser loading
 the page opens a connection for it and then two more, in a burst, for the
 stylesheet and the script. A subresource that loses that race takes the styling
 of the whole UI with it. One file means one request, and nothing left to race.
 
-Doing it here rather than at send time keeps the firmware trivial: it streams a
-static file with a real Content-Length instead of splicing three files into a
-chunked response on every load.
+Why in the firmware rather than on the filesystem: an over-the-air update writes
+the application partition and leaves the data partition alone, which is the
+whole point of it. With the UI on LittleFS, updating the firmware would leave
+the old page in place to talk to a new API, and updating the page would mean
+writing a filesystem image over the top of the config. Carrying the UI in the
+binary means one artefact, always in step with the code that serves it, and a
+LittleFS that holds nothing but settings nobody wants overwritten.
 
-Sources stay separate and are edited normally. fsdata/ is build output and is
-gitignored in full, which also stops the served copy of the wiki drifting from
-WIKI.md, since that copy is made here too.
+Sources stay separate and are edited normally. The generated files are build
+output and gitignored.
 """
 
 import gzip
+import io
 import json
 import os
-import shutil
 
 Import("env")  # noqa: F821  (injected by PlatformIO/SCons)
 
@@ -35,11 +37,41 @@ def read(path):
         return handle.read()
 
 
+def squeeze(raw):
+    """Deterministic gzip: no filename, no timestamp, so an unchanged page
+    produces an unchanged source file and does not force a rebuild."""
+    buffer = io.BytesIO()
+    with gzip.GzipFile(filename="", mode="wb", fileobj=buffer, mtime=0) as gz:
+        gz.write(raw)
+    return buffer.getvalue()
+
+
+def c_array(name, raw):
+    """One byte per entry, twelve to a line. Verbose in the source, exact in the
+    binary, and it needs no runtime decoding of any kind."""
+    lines = []
+    for start in range(0, len(raw), 12):
+        chunk = raw[start:start + 12]
+        lines.append("    " + " ".join("0x%02x," % byte for byte in chunk))
+    return ("const uint8_t %s[] PROGMEM = {\n%s\n};\nconst size_t %s_LEN = %d;\n"
+            % (name, "\n".join(lines), name, len(raw)))
+
+
+def write_if_changed(path, text):
+    """Rewriting an unchanged 500 KB source would rebuild it on every compile."""
+    if os.path.isfile(path):
+        with open(path, "r", encoding="utf-8") as handle:
+            if handle.read() == text:
+                return False
+    with open(path, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(text)
+    return True
+
+
 def main():
     project_dir = env.subst("$PROJECT_DIR")  # noqa: F821
-    data_dir = env.subst("$PROJECT_DATA_DIR")  # noqa: F821
     web_dir = os.path.join(project_dir, "web")
-    out_dir = os.path.join(data_dir, "www")
+    src_dir = os.path.join(project_dir, "src")
 
     index_path = os.path.join(web_dir, "index.html")
     if not os.path.isfile(index_path):
@@ -81,32 +113,47 @@ def main():
         % (json.dumps(languages, ensure_ascii=False, separators=(",", ":")), js),
     )
 
-    # Start clean, so a file this script no longer produces cannot linger in the
-    # image and be served in place of the one it does.
-    if os.path.isdir(out_dir):
-        shutil.rmtree(out_dir)
-    os.makedirs(out_dir)
-
     # Shipped gzipped, and only gzipped. The board writes the whole response
     # synchronously, so its main loop is stalled for as long as the transfer
     # takes and any connection arriving in that window queues behind it. Sending
     # a quarter of the bytes shortens that stall by the same factor, which
-    # matters far more here than the flash it saves.
+    # matters far more here than the flash it costs.
     raw = html.encode("utf-8")
-    packed = os.path.join(out_dir, "index.html.gz")
-    with gzip.GzipFile(filename="", mode="wb", fileobj=open(packed, "wb"), mtime=0) as gz:
-        gz.write(raw)
-    compressed = os.path.getsize(packed)
+    packed = squeeze(raw)
 
-    # The UI links to a local copy of the wiki, kept in step with the real one
-    # here so the two cannot drift.
-    wiki = os.path.join(project_dir, "WIKI.md")
-    if os.path.isfile(wiki):
-        shutil.copyfile(wiki, os.path.join(out_dir, "wiki.md"))
+    # The UI links to a local copy of the wiki, carried the same way so the two
+    # cannot drift and so it survives an update with no network.
+    wiki_path = os.path.join(project_dir, "WIKI.md")
+    wiki = squeeze(read(wiki_path).encode("utf-8")) if os.path.isfile(wiki_path) else b""
 
-    print("pack_web: index.html.gz %d bytes from %d (css %d, js %d), %.0f%% smaller -> %s"
-          % (compressed, len(raw), len(css), len(js),
-             100.0 * (1 - compressed / float(len(raw))), os.path.relpath(out_dir, project_dir)))
+    header = ('// Generated by tools/pack_web.py. Do not edit.\n'
+              '#pragma once\n\n'
+              '#include <Arduino.h>\n\n'
+              '#include "config.h"\n\n'
+              '#if WITH_WEBUI\n'
+              'extern const uint8_t WEB_INDEX_GZ[];\n'
+              'extern const size_t WEB_INDEX_GZ_LEN;\n'
+              'extern const uint8_t WEB_WIKI_GZ[];\n'
+              'extern const size_t WEB_WIKI_GZ_LEN;\n'
+              '#endif\n')
+
+    # Guarded, so the headless builds do not carry 50 KB of a page they never
+    # serve.
+    source = ('// Generated by tools/pack_web.py. Do not edit.\n'
+              '#include "web_assets.h"\n\n'
+              '#if WITH_WEBUI\n\n'
+              + c_array("WEB_INDEX_GZ", packed) + "\n"
+              + c_array("WEB_WIKI_GZ", wiki) + "\n"
+              '#endif\n')
+
+    write_if_changed(os.path.join(src_dir, "web_assets.h"), header)
+    changed = write_if_changed(os.path.join(src_dir, "web_assets.cpp"), source)
+
+    print("pack_web: page %d bytes from %d (css %d, js %d, %.0f%% smaller), wiki %d bytes, "
+          "%.1f KB of flash%s"
+          % (len(packed), len(raw), len(css), len(js),
+             100.0 * (1 - len(packed) / float(len(raw))), len(wiki),
+             (len(packed) + len(wiki)) / 1024.0, "" if changed else ", unchanged"))
 
 
 main()

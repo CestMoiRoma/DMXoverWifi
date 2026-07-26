@@ -20,6 +20,7 @@ using WebServerClass = WebServer;
 #include "mqtt_manager.h"
 #include "save_guard.h"
 #include "scenes.h"
+#include "updater.h"
 #include "wifi_manager.h"
 
 // Serves the web UI (unless WITH_WEBUI is 0) and the REST API the UI, the MQTT
@@ -43,14 +44,17 @@ class DmxWebServer {
   // place instead of at the top of two dozen handlers.
   void onApi(const Uri& uri, HTTPMethod method, std::function<void()> handler);
   bool apiAllowed();
+  int apiRefusal();  // 0 when allowed, otherwise the status to answer with
   bool requestFromUi();
+  void registerUpdateRoutes();
 
   // helpers
   void parseBody(JsonDocument& doc);
   void sendJson(int status, const JsonDocument& doc);
   void sendError(int status, const char* msg);
   bool serveFile(const char* path, const char* contentType);
-  void serveIndex();  // the packed, gzipped page
+  void sendPacked(const uint8_t* data, size_t len, const char* contentType);
+  void serveIndex();  // the packed, gzipped page, straight out of flash
   String buildEnvText();
 
   // Whole-config snapshot and restore, the .json counterpart of the .env export.
@@ -66,5 +70,7 @@ class DmxWebServer {
   SaveGuard& _saveGuard;
   SceneStore& _scenes;
   GroupStore& _groups;
+  Updater _updater;
+  bool _otaRefused = false;
   WebServerClass _server;
 };

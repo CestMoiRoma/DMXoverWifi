@@ -13,10 +13,14 @@
 # Local config backup exported from the board (may hold wifi/mqtt secrets)
 .env
 
-# The whole LittleFS image is build output: tools/pack_web.py writes www/ from
-# web/, tools/env_to_fsdata.py writes data/ from .env. The latter carries the
-# same WiFi and MQTT passwords as .env itself.
+# The whole LittleFS image is build output: tools/env_to_fsdata.py writes data/
+# from .env, and it carries the same WiFi and MQTT passwords as .env itself.
 fsdata/
+
+# The web UI compiled into the firmware. tools/pack_web.py regenerates both on
+# every build from web/, which is where the UI is actually edited.
+src/web_assets.h
+src/web_assets.cpp
 
 # OS / filesystem cruft
 .DS_Store

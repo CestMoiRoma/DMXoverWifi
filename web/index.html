@@ -208,6 +208,23 @@
       </div>
 
       <div class="section">
+        <h2 data-i18n="sec.firmware">Firmware</h2>
+        <p class="hint">
+          Running version <strong id="fw-version">…</strong>. An update rewrites
+          the program only: fixtures, scenes, groups, labels and network settings
+          are on a separate partition and are left exactly as they are. DMX output
+          stops while the file transfers and the board reboots after it, so do
+          this with the rig dark rather than mid-show.
+        </p>
+        <div class="form-actions start">
+          <input type="file" id="ota-file" accept=".bin">
+          <button type="button" id="ota-install" data-i18n="btn.install">Install</button>
+        </div>
+        <progress id="ota-progress" max="100" value="0" hidden></progress>
+        <p id="ota-status" class="hint"></p>
+      </div>
+
+      <div class="section">
         <h2 data-i18n="sec.reboot">Reboot</h2>
         <p class="hint">
           Pin changes, hostname changes and the WiFi switch only take effect on
