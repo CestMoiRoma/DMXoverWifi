@@ -49,7 +49,37 @@ Match the code around you.
 
 ## Licensing
 
-The project is under the [PolyForm Noncommercial License 1.0.0](LICENSE).
+The project is under the [PolyForm Noncommercial License 1.0.0](LICENSE), widened
+by one [additional permission](ADDITIONAL-PERMISSION.md) that allows paid work
+with the box: live events, installations, rentals and consulting. Distributing
+hardware preloaded with the firmware, or sold as being for it, still needs
+written permission. Ask in an issue.
 
-By opening a pull request you agree that your contribution is licensed under the
-same terms. If you want to use this commercially, open an issue and ask.
+Contributions are licensed under those same terms, and are covered by the
+[contributor licence agreement](CLA.md). Read it once before your first pull
+request. The short version:
+
+- **You keep the copyright in everything you write.** Nothing is transferred.
+- You grant the maintainer a licence broad enough to relicense the project later
+  without having to track down every contributor, since one holdout would
+  otherwise freeze the terms forever.
+- **Opening a pull request records your acceptance**, for that contribution and
+  every one after it. There is nothing to sign and nothing to email.
+- Nothing can be merged before acceptance is recorded.
+
+If your employer holds rights over what you write at work, sort that out before
+you submit, not after.
+
+## Safety
+
+This firmware has no timing guarantee. A command crosses WiFi into a
+single-threaded loop, so it can arrive late or not at all, which
+[Timing and latency](docs/wiki/timing.md) sets out in detail. It comes with no
+warranty, and neither the maintainer nor any contributor can be held liable for
+damage to equipment, property or people arising from its use.
+
+Keep it that way when you contribute. Do not add features that invite it near
+pyrotechnics, hoists, moving trusses, lasers or anything else where a late cue
+becomes a physical hazard, and do not soften the warnings that say so. If a
+change affects timing, say so in the pull request and put the numbers from
+`/api/info` next to it.

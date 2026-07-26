@@ -245,15 +245,42 @@ the pull request workflow.
 
 ## License
 
-[PolyForm Noncommercial 1.0.0](LICENSE). In plain terms:
+[PolyForm Noncommercial 1.0.0](LICENSE), with one
+[additional permission](ADDITIONAL-PERMISSION.md). In plain terms:
 
 - **Noncommercial use is free**, including by schools, charities and public
   bodies.
-- **Forks and modifications are welcome**, as long as the licence and the
-  copyright notice travel with them, so credit stays attached.
-- **Commercial use needs an agreement.** Open an issue and ask.
+- **Paid work with the box is free too.** Live events, installations, rentals
+  and consulting are permitted, which is what the
+  [additional permission](ADDITIONAL-PERMISSION.md) is for.
+- **Forks and modifications are welcome**, as long as the licence, that
+  permission and the copyright notice travel with them, so credit stays
+  attached.
+- **Selling hardware with the firmware on it needs an agreement**, as does
+  anything else the permission does not cover. Open an issue and ask.
 
-Contributions go through pull requests and are licensed under the same terms.
+Contributions go through pull requests, are licensed under the same terms, and
+are covered by the [contributor licence agreement](CLA.md). See
+[CONTRIBUTING.md](CONTRIBUTING.md).
+
+## No warranty, and where not to use this
+
+> [!WARNING]
+> The software comes as is, with no warranty of any kind, and the licensor is
+> not liable for any damage arising from using it. That covers your fixtures,
+> your rig, your venue and the people standing in it.
+
+The reason is not boilerplate. Timing here is best effort: a command travels over
+WiFi into a single-threaded loop, so the delay before a fixture reacts varies and
+can spike, and a cue can land late or not at all.
+[Timing and latency](docs/wiki/timing.md) explains exactly why, and what the
+board does guarantee.
+
+So do not drive anything that can hurt someone or break something when a command
+is late: pyrotechnics, flame, hoists, moving trusses, winches, lasers, or any
+machine where a missed cue has a physical consequence. Use a real desk on a wired
+Art-Net or sACN network for that. If you use this firmware there anyway, that is
+your decision and your responsibility.
 
 ## Credits
 
