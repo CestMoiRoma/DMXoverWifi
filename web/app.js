@@ -1206,7 +1206,9 @@ function smokeControls(t) {
   const autoOff = parseInt(t.setting("auto_off_s", "0"), 10) || 0;
 
   if (sliderMode) {
-    const fader = roleFader(t, "output", "Pump");
+    // Standing, like every other fader in a widget column: a flat one wants the
+    // width of a card and this column is 12rem.
+    const fader = roleFader(t, "output", "Pump", false, true);
     if (fader) block.appendChild(fader);
   } else {
     const row = el("div", { class: "ez-row" });
@@ -1510,9 +1512,16 @@ function ezWidgets(t) {
   }
   const standing = faders.filter(Boolean);
 
+  // The explanatory line goes under the card, not in the widget column. A
+  // paragraph in a flex item is as wide as its longest possible line, so a
+  // sentence next to the joystick asks for some 700px and puts a scrollbar on a
+  // card with room to spare. Nothing about the sentence needs to be up there.
+  const notes = Array.prototype.slice.call(main.querySelectorAll(".hint"));
+  notes.forEach((note) => note.remove());
+
   const layout = el("div", { class: "ez-layout" }, [el("div", { class: "ez-main" }, [main])]);
   if (standing.length) layout.appendChild(el("div", { class: "fader-row" }, standing));
-  return [layout];
+  return [layout].concat(notes);
 }
 
 function ezCardBody(device) {

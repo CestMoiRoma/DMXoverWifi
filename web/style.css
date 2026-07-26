@@ -703,7 +703,10 @@ button.danger:hover { background: #b91c1c; border-color: #b91c1c; }
      grid keeps cards above this, so the scrollbar is for the phone case. */
   min-width: min(100%, 22.5rem);
 }
-.ez-layout .ez-main { flex: 0 0 auto; }
+/* Capped so nothing in the widget column can decide the width of the row. The
+   widgets themselves are 168px; the cap is for whatever text or button row ends
+   up next to them, which wraps instead of stretching. */
+.ez-layout .ez-main { flex: 0 0 auto; max-width: 12rem; }
 .ez-layout .ez-block { margin: 0; }
 .ez-layout .fader-row { flex: 0 0 auto; flex-wrap: nowrap; margin-top: 0; gap: 0.75rem; }
 
